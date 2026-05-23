@@ -1,5 +1,6 @@
-Estrutura do projeto
 
+### Estrutura do projeto
+```bash
 my_tsf_project/
 ├── data/                     # Datasets (ETTh1, ETTm1, Weather, Electricity, etc.)
 ├── datasets/                 # Data loaders PyTorch
@@ -25,3 +26,4 @@ my_tsf_project/
 ├── experiments/              # Scripts de execução
 ├── logs/
 └── main.py
+```
