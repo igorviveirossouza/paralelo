@@ -6,28 +6,29 @@ from models.attention_solo import AttentionSolo
 # Configuração
 seq_len = 96
 pred_len = 96
-batch_size = 32
+batch_size = 8
 
-# Dataset
+# Dataset - usando dados B3 disponíveis
 dataset = TimeSeriesDataset(
-    root_path='data/',          # ajuste para seu caminho
-    data_path='ETTh1.csv',      # exemplo
+    root_path='/home/workdir/attachments',  
+    data_path='b3_daily_financeiro_ohlcv.csv',
     flag='train',
     size=[seq_len, 0, pred_len],
     features='M'
 )
 
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 # Modelo
-model = AttentionSolo(seq_len=seq_len, pred_len=pred_len, enc_in=7)  # ETTh1 tem 7 vars
-model = model.cuda() if torch.cuda.is_available() else model
+model = AttentionSolo(seq_len=seq_len, pred_len=pred_len, enc_in=7)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
 
 # Teste forward
-for batch_x, batch_y in dataloader:
-    batch_x = batch_x.cuda() if torch.cuda.is_available() else batch_x
-    batch_y = batch_y.cuda() if torch.cuda.is_available() else batch_y
+for i, (batch_x, batch_y) in enumerate(dataloader):
+    batch_x = batch_x.to(device)
+    batch_y = batch_y.to(device)
     
     pred, loss = model(batch_x, batch_y, return_loss=True)
-    print(f"Pred shape: {pred.shape} | Loss: {loss.item():.6f}")
+    print(f"Batch {i} | Pred shape: {pred.shape} | Loss: {loss.item():.6f}")
     break
