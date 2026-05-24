@@ -15,6 +15,9 @@ class TimeSeriesDataset(Dataset):
         self.target = target
         self.scale = scale
         self.flag = flag
+        self.meta_columns = []
+        self.meta_frame = None
+        self.feature_columns = []
         
         self.__read_data__(root_path, data_path)
         
@@ -30,8 +33,31 @@ class TimeSeriesDataset(Dataset):
             df_data = df_raw[[self.target]]
         else:
             df_data = df_raw.iloc[:, 1:]
-        
-        data = df_data.values.astype(np.float32)
+
+        # Separa metadados não numéricos (ex.: ticker/canal) das features.
+        # As features continuam numéricas para o modelo, mas os metadados
+        # ficam disponíveis para rastreamento/identificação posterior.
+        df_numeric = df_data.apply(pd.to_numeric, errors='coerce')
+        valid_numeric_cols = df_numeric.columns[~df_numeric.isna().all(axis=0)]
+        self.feature_columns = valid_numeric_cols.tolist()
+
+        self.meta_columns = [col for col in df_data.columns if col not in self.feature_columns]
+        if self.meta_columns:
+            self.meta_frame = df_data[self.meta_columns].copy()
+        else:
+            self.meta_frame = None
+
+        df_numeric = df_numeric[self.feature_columns]
+
+        if df_numeric.shape[1] == 0:
+            raise ValueError(
+                "Nenhuma coluna numérica encontrada no dataset após o pré-processamento. "
+                "Verifique `features`, `target` e o conteúdo do CSV."
+            )
+
+        # Preenche lacunas de conversão sem quebrar a sequência temporal.
+        df_numeric = df_numeric.ffill().bfill().fillna(0.0)
+        data = df_numeric.values.astype(np.float32)
         
         # Normalização manual (sem scikit-learn)
         if self.scale:
@@ -41,6 +67,17 @@ class TimeSeriesDataset(Dataset):
         
         self.data_x = data
         self.data_y = data  # para forecasting supervisionado
+
+    def get_metadata_window(self, index):
+        """Retorna metadados (não numéricos) para a mesma janela de seq_x."""
+        if self.meta_frame is None:
+            return None
+
+        max_index = len(self.meta_frame) - self.seq_len - self.pred_len
+        index = min(max(0, index), max_index)
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        return self.meta_frame.iloc[s_begin:s_end].reset_index(drop=True)
     
     def __getitem__(self, index):
         # Proteção contra índices inválidos
