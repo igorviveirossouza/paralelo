@@ -26,11 +26,14 @@ def main():
 
     # Dataset
     dataset = TimeSeriesDataset(
-        root_path='/sonic_home/igor.viveiros/paralelo/data',
-        data_path=args.data_path,
-        flag='train',
-        size=[args.seq_len, 0, args.pred_len],
-        features=args.features
+        root_path="./data",           # ou onde está o CSV
+        data_path="b3_daily_financeiro.csv",
+        features=['data'],            # ou ['target_value'] após rename
+        target='data',                # ou 'target_value'
+        seq_len=96,
+        label_len=48,
+        pred_len=24,
+        scale=True
     )
 
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)

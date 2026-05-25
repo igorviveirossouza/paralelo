@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -p medusas
-#SBATCH --time=14:00:00
+#SBATCH -p gorgonas_dev
+#SBATCH --time=00:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
