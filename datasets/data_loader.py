@@ -23,11 +23,39 @@ class TimeSeriesDataset(Dataset):
         
     def __read_data__(self, root_path, data_path):
         df_raw = pd.read_csv(os.path.join(root_path, data_path))
+        df_raw.columns = [str(c).strip() for c in df_raw.columns]
+
+        # Suporta formato longo: date (tempo), col (id da série), data (valor).
+        required_long_cols = {"date", "col", "data"}
+        lowered_cols = {c.lower(): c for c in df_raw.columns}
+        if required_long_cols.issubset(set(lowered_cols.keys())):
+            date_col = lowered_cols["date"]
+            id_col = lowered_cols["col"]
+            value_col = lowered_cols["data"]
+            df_long = df_raw[[date_col, id_col, value_col]].copy()
+            df_long[date_col] = pd.to_datetime(df_long[date_col], errors="coerce")
+            df_long[value_col] = pd.to_numeric(df_long[value_col], errors="coerce")
+            df_long = df_long.dropna(subset=[date_col, id_col, value_col])
+
+            # Pivot para formato multivariado (linhas = datas, colunas = séries).
+            df_pivot = (
+                df_long.pivot_table(
+                    index=date_col,
+                    columns=id_col,
+                    values=value_col,
+                    aggfunc="last",
+                )
+                .sort_index()
+                .reset_index()
+            )
+            df_raw = df_pivot
         
+        lowered_cols = {c.lower(): c for c in df_raw.columns}
+
         # Seleção de colunas (M = multivariate, S = univariate)
         if self.features == 'M' or self.features == 'MS':
             # Skip first column if it's 'date' or index
-            cols_data = [col for col in df_raw.columns if col.lower() not in ['date', 'data']]
+            cols_data = [col for col in df_raw.columns if col.lower() not in ['date', 'data', 'col']]
             df_data = df_raw[cols_data]
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
@@ -42,8 +70,12 @@ class TimeSeriesDataset(Dataset):
         self.feature_columns = valid_numeric_cols.tolist()
 
         self.meta_columns = [col for col in df_data.columns if col not in self.feature_columns]
+        if "date" in lowered_cols:
+            self.meta_columns = list(dict.fromkeys([lowered_cols["date"]] + self.meta_columns))
         if self.meta_columns:
-            self.meta_frame = df_data[self.meta_columns].copy()
+            # Busca metadados do df original para manter colunas de identificação.
+            cols_available = [c for c in self.meta_columns if c in df_raw.columns]
+            self.meta_frame = df_raw[cols_available].copy()
         else:
             self.meta_frame = None
 
