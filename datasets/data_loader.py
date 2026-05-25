@@ -1,15 +1,10 @@
-import torch
+import os
+import pandas as pd
+import numpy as np
 from torch.utils.data import Dataset
-import pandas as pd
-import numpy as np
-import os
 
-import os
-import pandas as pd
-import numpy as np
-
-class TimeSeriesDataset:
-    def __init__(self, root_path, data_path, features=['data'], target='data', 
+class TimeSeriesDataset(Dataset):
+    def __init__(self, root_path, data_path, features=['data'], target='data',
                  seq_len=96, label_len=48, pred_len=24, scale=True, timeenc=0, freq='d'):
         self.root_path = root_path
         self.data_path = data_path
@@ -31,31 +26,35 @@ class TimeSeriesDataset:
         print("Tipos de dados:\n", df_raw.dtypes)
         print("Primeiras 5 linhas:\n", df_raw.head())
 
-        # === AJUSTE ESPECÍFICO PARA b3_daily_financeiro.csv ===
-        if 'data' in df_raw.columns:
-            df_raw = df_raw.rename(columns={'data': 'target_value'})
-            numeric_cols = ['target_value']
-        else:
-            # fallback genérico
-            numeric_cols = df_raw.select_dtypes(include=[np.number]).columns.tolist()
-        
-        if len(numeric_cols) == 0:
-            raise ValueError(
-                f"Nenhuma coluna numérica encontrada. Colunas disponíveis: {df_raw.columns.tolist()}\n"
-                f"Verifique se o CSV tem colunas como 'data', 'price', etc."
-            )
+        # === Tratamento específico para b3_daily_financeiro.csv ===
+        df_raw = df_raw.rename(columns={'data': 'target_value'})
+        numeric_cols = ['target_value']
 
-        # Selecionar apenas as colunas numéricas desejadas
-        self.data = df_raw[numeric_cols].values.astype(np.float32)
-        
-        # Manter timestamp se existir
-        if 'date' in df_raw.columns:
-            self.date = pd.to_datetime(df_raw['date'], errors='coerce')
-        else:
-            self.date = None
-            
-        self.ticker = df_raw['cols'].values if 'cols' in df_raw.columns else None
+        if len(numeric_cols) == 0:
+            raise ValueError(f"Nenhuma coluna numérica encontrada. Colunas: {df_raw.columns.tolist()}")
+
+        self.data = df_raw[numeric_cols].values.astype(np.float32)   # shape: (N, 1)
+        self.timestamps = df_raw['date'].values if 'date' in df_raw.columns else None
+        self.tickers = df_raw['cols'].values if 'cols' in df_raw.columns else None
 
         print(f"✅ Dataset carregado com sucesso!")
         print(f"   Shape: {self.data.shape}")
-        print(f"   Colunas numéricas usadas: {numeric_cols}")
+        print(f"   Colunas numéricas usadas: {numeric_cols}\n")
+
+    def __len__(self):
+        return len(self.data) - self.seq_len - self.pred_len + 1
+
+    def __getitem__(self, index):
+        s_begin = index
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = r_begin + self.label_len + self.pred_len
+
+        seq_x = self.data[s_begin:s_end]           # input
+        seq_y = self.data[r_begin:r_end]           # target (label + pred)
+
+        # Converter para tensor
+        seq_x = np.array(seq_x, dtype=np.float32)
+        seq_y = np.array(seq_y, dtype=np.float32)
+
+        return seq_x, seq_y   # (seq_len, 1), (label_len + pred_len, 1)
