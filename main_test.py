@@ -1,8 +1,11 @@
 import torch
 import argparse
+import os
 from datasets.data_loader import TimeSeriesDataset
 from torch.utils.data import DataLoader
 from models.attention_solo import AttentionSolo
+from trainer.training_loop import Trainer
+from forecaster.rolling_forecast import run_one_step_rolling_forecast
 
 def main():
     parser = argparse.ArgumentParser()
@@ -12,6 +15,8 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--features', type=str, default='M')
     parser.add_argument('--loss_name', type=str,default='mse')
+    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--output_dir', type=str, default='previsoes')
     args = parser.parse_args()
 
     print(f"Configuração:")
@@ -36,10 +41,22 @@ def main():
     print(f"  Features detectadas: {enc_in}")
 
     # Modelo
-    model = AttentionSolo(seq_len=args.seq_len, pred_len=args.pred_len, enc_in=enc_in,loss_name=loss_name)
+    model = AttentionSolo(
+        seq_len=args.seq_len,
+        pred_len=args.pred_len,
+        enc_in=enc_in,
+        loss_name=args.loss_name
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     print(f"  Device: {device}")
+    print(f"  Meta columns preservadas: {dataset.meta_columns}")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    trainer = Trainer(model=model, optimizer=optimizer, device=device)
+    for epoch in range(args.epochs):
+        train_loss = trainer.train_one_epoch(dataloader)
+        print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
     # Teste forward
     for i, (batch_x, batch_y) in enumerate(dataloader):
@@ -50,7 +67,9 @@ def main():
         print(f"Batch {i} | Pred shape: {pred.shape} | Loss: {loss.item():.6f}")
         break
 
-    print("✅ Teste concluído com sucesso!")
+    os.makedirs(args.output_dir, exist_ok=True)
+    run_one_step_rolling_forecast(model, dataset, output_dir=args.output_dir)
+    print(f"✅ Rolling forecast salvo em: {args.output_dir}")
 
 if __name__ == "__main__":
     main()
