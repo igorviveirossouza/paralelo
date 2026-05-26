@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH -p gorgonas_dev
+#SBATCH --gres=gpu:1
 #SBATCH --time=00:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
@@ -18,5 +19,5 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
 "$PYTHON_BIN" ./main_test.py \
     --data_path b3_daily_financeiro.csv \
     --seq_len 96 \
-    --pred_len 48 \
+    --pred_len 24 \
     --batch_size 16\

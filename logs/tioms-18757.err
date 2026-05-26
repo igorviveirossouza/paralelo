@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "/sonic_home/igor.viveiros/paralelo/./main_test.py", line 78, in <module>
-    main()
-  File "/sonic_home/igor.viveiros/paralelo/./main_test.py", line 42, in main
-    sample_x, _ = dataset[0]
-TypeError: 'TimeSeriesDataset' object is not subscriptable

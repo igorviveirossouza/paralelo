@@ -8,7 +8,7 @@ class AttentionSolo(nn.Module):
     Modelo básico: Atenção temporal independente por canal (channel-independent).
     Compatível com interface do TFB / TIOMS.
     """
-    def __init__(self, seq_len, pred_len, enc_in=1, d_model=512, n_heads=8,
+    def __init__(self, seq_len, pred_len, enc_in=1, d_model=32, n_heads=8,
                  dropout=0.1, loss_name='mse'):
         super().__init__()
         self.seq_len = seq_len
