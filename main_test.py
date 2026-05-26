@@ -8,32 +8,36 @@ from torch.utils.data import DataLoader
 from models.attention_solo import AttentionSolo
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
+from pathlib import Path
+
+
 
 def main():
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='b3_daily_financeiro.csv')
-    parser.add_argument('--seq_len', type=int, default=96)
-    parser.add_argument('--lookback', type=int, default=48)
+    parser.add_argument('--base_de_dados', type=str, default='b3_daily_financeiro.csv')
+    parser.add_argument('--lookback', type=int, default=96)
+    parser.add_argument('--pred_len', type=int, default=24)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--features', type=str, default='M')
     parser.add_argument('--loss_name', type=str,default='mse')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
     args = parser.parse_args()
 
     print(f"Configuração:")
-    print(f"  Dataset: {args.data_path}")
-    print(f"  seq_len: {args.seq_len} | lookback: {args.lookback}")
-    print(f"  batch_size: {args.batch_size} | features: {args.features} | epochs:{args.epochs}")
-    print(f"Loss: {args.loss_name} | features: {args.features}")
-
+    print(f"  Dataset: {args.base_de_dados}")
+    print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
+    print(f"  batch_size: {args.batch_size} | epochs:{args.epochs}")
+    print(f"Loss: {args.loss_name}")
 
     # Dataset
+
+    BASE_DIR = Path(__file__).resolve().parents[0]
+
     dataset = TimeSeriesDataset(
-        root_path="./data",           # ou onde está o CSV
-        data_path=args.data_path,
+        data_path=f"{BASE_DIR}/data/{args.base_de_dados}",
         lookback=args.lookback,
-        lookback=args.lookback,
+        pred_len=args.pred_len,
         cols=None,
     )
 
@@ -58,8 +62,8 @@ def main():
 
     # Modelo
     model = AttentionSolo(
-        seq_len=args.seq_len,
         lookback=args.lookback,
+        pred_len=args.pred_len,
         enc_in=enc_in,
         loss_name=args.loss_name
     )
