@@ -21,3 +21,4 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --lookback 96 \
     --pred_len 24 \
     --batch_size 16\
+    --epochs 8\

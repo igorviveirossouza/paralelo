@@ -1,99 +1,121 @@
-
-#%%
+# %%
 import torch
 import argparse
 import os
+from pathlib import Path
+
 from loader.data_loader import TimeSeriesDataset
 from torch.utils.data import DataLoader
+
 from models.attention_solo import AttentionSolo
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
-from pathlib import Path
-
 
 
 def main():
-    
     parser = argparse.ArgumentParser()
     parser.add_argument('--base_de_dados', type=str, default='b3_daily_financeiro.csv')
+    parser.add_argument('--cols', type=str, default=None, help="None para multivariate, ou nome do ticker")
     parser.add_argument('--lookback', type=int, default=96)
     parser.add_argument('--pred_len', type=int, default=24)
+    parser.add_argument('--test_ratio', type=float, default=0.2)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--loss_name', type=str,default='mse')
+    parser.add_argument('--loss_name', type=str, default='mse')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
     args = parser.parse_args()
 
     print(f"Configuração:")
-    print(f"  Dataset: {args.base_de_dados}")
+    print(f"  Base de dados: {args.base_de_dados}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
-    print(f"  batch_size: {args.batch_size} | epochs:{args.epochs}")
-    print(f"Loss: {args.loss_name}")
+    print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
+    print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
+    print(f"  cols: {args.cols if args.cols else 'Multivariate'}\n")
 
-    # Dataset
+    # ====================== RESOLUÇÃO DO CAMINHO ======================
+    possible_paths = [
+        args.base_de_dados,                                           # caminho direto
+        f"data/{args.base_de_dados}",                                 # pasta data (principal)
+        str(Path("data") / args.base_de_dados),
+        f"attachments/{args.base_de_dados}",                          # fallback
+        str(Path("/home/workdir/attachments") / args.base_de_dados),
+    ]
 
-    BASE_DIR = Path(__file__).resolve().parents[0]
+    data_path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            data_path = p
+            print(f"✅ Arquivo encontrado em: {data_path}")
+            break
 
-    dataset = TimeSeriesDataset(
-        data_path=f"{BASE_DIR}/data/{args.base_de_dados}",
+    if data_path is None:
+        raise FileNotFoundError(
+            f"Arquivo '{args.base_de_dados}' não encontrado.\n"
+            f"Procurei em:\n" + "\n".join(possible_paths)
+        )
+
+    # ====================== DATASETS ======================
+    train_dataset = TimeSeriesDataset(
+        data_path=data_path,
         lookback=args.lookback,
         pred_len=args.pred_len,
-        cols=None,
+        stride=1,
+        cols=args.cols,
+        train=True,
+        test_ratio=args.test_ratio
     )
 
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    test_dataset = TimeSeriesDataset(
+        data_path=data_path,
+        lookback=args.lookback,
+        pred_len=args.pred_len,
+        stride=1,
+        cols=args.cols,
+        train=False,
+        test_ratio=args.test_ratio
+    )
 
-    print(f"DataLoader criado com {len(dataloader)} batches\n")
+    # DataLoader para treino
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    # Teste de um batch
-    for i, (batch_x, batch_y) in enumerate(dataloader):
-        print(f"Batch {i+1} shapes:")
-        print(f"  batch_x: {batch_x.shape}")   # Deve ser (B, T, N)
-        print(f"  batch_y: {batch_y.shape}")   # (B, label_len+lookback, N)
-        break  # só o primeiro batch
+    print(f"\nDataLoader de treino criado com {len(train_loader)} batches\n")
 
-    print("\n✅ Pipeline DataLoader funcionando em formato multivariado (B x T x N)")
-
-#%%  Modelo
-
-    sample_x, _ = dataset[0]
+    # ====================== MODELO ======================
+    sample_x, _ = train_dataset[0]
     enc_in = sample_x.shape[1]
-    print(f"  Features detectadas: {enc_in}")
+    print(f"Features detectadas: {enc_in}")
 
-    # Modelo
     model = AttentionSolo(
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
         loss_name=args.loss_name
     )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
-    print(f"  Device: {device}")
+    print(f"Modelo carregado no device: {device}")
 
-    
-    # Teste forward
-    for i, (batch_x, batch_y) in enumerate(dataloader):
-        batch_x = batch_x.to(device)
-        batch_y = batch_y.to(device)
-        
-        pred, loss = model(batch_x, batch_y, return_loss=True)
-        print(f"Batch {i} | Pred shape: {pred.shape} | Loss: {loss.item():.6f}")
-        break
-    print("\n✅ Carregamento em GPU realizado com sucesso")
-#%% Treinamento
-
+    # ====================== TREINAMENTO ======================
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     trainer = Trainer(model=model, optimizer=optimizer, device=device)
+
+    print("\nIniciando treinamento...")
     for epoch in range(args.epochs):
-        train_loss = trainer.train_one_epoch(dataloader)
+        train_loss = trainer.train_one_epoch(train_loader)
         print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
+    # ====================== ROLLING FORECAST (APENAS TESTE) ======================
+    print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
+    
+    run_one_step_rolling_forecast(
+        model=model,
+        dataset=test_dataset,
+        output_dir=args.output_dir
+    )
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    run_one_step_rolling_forecast(model, dataset, output_dir=args.output_dir)
-    print(f"✅ Rolling forecast salvo em: {args.output_dir}")
+    print(f"\n✅ Pipeline concluído! Previsões fora da amostra salvas em: {args.output_dir}")
+
 
 if __name__ == "__main__":
     main()
-# %%
