@@ -23,6 +23,7 @@ class TimeSeriesDataset(Dataset):
         
         if cols is None:
             self.data = torch.tensor(df_pivot.values, dtype=torch.float32)  # [T, N=9]
+            self.feature_columns = df_pivot.columns.tolist()
             self.mode = "multivariate"
             print(f"✅ Modo Multivariate - {self.data.shape[1]} séries | Shape: {self.data.shape}")
         
@@ -31,6 +32,7 @@ class TimeSeriesDataset(Dataset):
             if cols not in df_pivot.columns:
                 raise ValueError(f"Coluna '{cols}' não encontrada. Disponíveis: {list(df_pivot.columns)}")
             self.data = torch.tensor(df_pivot[cols].values, dtype=torch.float32).unsqueeze(1)  # [T, 1]
+            self.feature_columns = [cols]
             self.mode = "univariate"
             print(f"✅ Modo Univariate - Ticker: {cols} | Shape: {self.data.shape}")    
             
@@ -56,3 +58,11 @@ class TimeSeriesDataset(Dataset):
         assert len(y) == self.horizon, f"Janela truncada! idx={idx}, y_len={len(y)}"
         
         return x, y
+    
+    @property                        # Atributos a serem guardados
+    def feature_columns(self):
+        return self.feature_columns  # já definido no __init__
+    
+    def get_metadata_window(self, idx):
+        """Retorna None por enquanto (pode expandir depois se precisar de metadata)"""
+        return None
