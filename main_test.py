@@ -108,13 +108,14 @@ def main():
     # ====================== ROLLING FORECAST (APENAS TESTE) ======================
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
     
-    run_one_step_rolling_forecast(
+    forecast_dir = run_one_step_rolling_forecast(
         model=model,
         dataset=test_dataset,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        dataset_name=args.base_de_dados
     )
 
-    print(f"\n✅ Pipeline concluído! Previsões fora da amostra salvas em: {args.output_dir}")
+    print(f"\n✅ Pipeline concluído! Previsões fora da amostra salvas em: {forecast_dir}")
 
 
 if __name__ == "__main__":
