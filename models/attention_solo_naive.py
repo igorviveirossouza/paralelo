@@ -3,7 +3,7 @@ import torch.nn as nn
 from utils.embeddings import TemporalEmbedding
 from utils.custom_losses import get_loss
 
-class AttentionSolo(nn.Module):
+class AttentionSoloNaive(nn.Module):
     """
     Modelo básico: Atenção temporal independente por canal (channel-independent).
     Compatível com interface do TFB / TIOMS.
@@ -14,15 +14,14 @@ class AttentionSolo(nn.Module):
         self.lookback = lookback
         self.pred_len = pred_len
         self.enc_in = enc_in  # número de canais (variáveis)
-        self.d_model = d_model
+
         self.embedding = TemporalEmbedding(enc_in, d_model, dropout)
 
         # Camada de atenção multi-head simples
         self.attention = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
 
         # Decoder linear (projection)
-        # self.projection = nn.Linear(d_model, pred_len * enc_in)
-        self.projection = nn.Linear(lookback * d_model, pred_len * enc_in)
+        self.projection = nn.Linear(d_model, enc_in)
 
         self.loss_fn = get_loss(loss_name)
 
@@ -36,17 +35,9 @@ class AttentionSolo(nn.Module):
         # Self-attention temporal
         attn_output, _ = self.attention(x_emb, x_emb, x_emb)
 
-        # Usa o último timestep como resumo da janela histórica
-        # h = attn_output[:, -1, :]  # (B, D)
-        h = attn_output.reshape(batch, self.lookback * self.d_model)
-
-
         # Projeção para horizonte futuro
-        output = self.projection(h)
-        
-        # Reorganiza para matriz futura
-        output = output.view(batch, self.pred_len, self.enc_in)  # (B, pred_len, enc_in)
-
+        output = self.projection(attn_output[:, -1:, :])  # usa último timestep
+        output = output.repeat(1, self.pred_len, 1)  # naive repeat (melhorar depois)
 
         if return_loss and y is not None:
             loss = self.loss_fn(output, y[:, -self.pred_len:, :])

@@ -7,7 +7,7 @@ from pathlib import Path
 from loader.data_loader import TimeSeriesDataset
 from torch.utils.data import DataLoader
 
-from models.attention_solo import AttentionSolo
+from models.attention_solo_naive import AttentionSoloNaive as modelo
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 
@@ -85,7 +85,7 @@ def main():
     enc_in = sample_x.shape[1]
     print(f"Features detectadas: {enc_in}")
 
-    model = AttentionSolo(
+    model = modelo(
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
