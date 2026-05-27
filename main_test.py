@@ -7,9 +7,18 @@ from pathlib import Path
 from loader.data_loader import TimeSeriesDataset
 from torch.utils.data import DataLoader
 
-from models.attention_solo_naive import AttentionSoloNaive as modelo
+from models.attention_solo import AttentionSolo
+from models.attention_solo_naive import AttentionSoloNaive
+from models.attention_solo_channel_independent import AttentionSoloChannelIndependent
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
+
+
+MODEL_REGISTRY = {
+    "AttentionSoloNaive": AttentionSoloNaive,
+    "AttentionSolo": AttentionSolo,
+    "AttentionSoloChannelIndependent": AttentionSoloChannelIndependent,
+}
 
 
 def main():
@@ -23,10 +32,18 @@ def main():
     parser.add_argument('--loss_name', type=str, default='mse')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
+    parser.add_argument(
+        '--model_name',
+        type=str,
+        default='AttentionSoloNaive',
+        choices=list(MODEL_REGISTRY.keys()),
+        help='Modelo a ser treinado/executado'
+    )
     args = parser.parse_args()
 
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
+    print(f"  Modelo: {args.model_name}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
@@ -85,7 +102,8 @@ def main():
     enc_in = sample_x.shape[1]
     print(f"Features detectadas: {enc_in}")
 
-    model = modelo(
+    model_class = MODEL_REGISTRY[args.model_name]
+    model = model_class(
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
@@ -94,6 +112,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
+    print(f"Modelo carregado: {model.__class__.__name__}")
     print(f"Modelo carregado no device: {device}")
 
     # ====================== TREINAMENTO ======================
