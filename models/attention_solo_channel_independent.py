@@ -22,8 +22,9 @@ class AttentionSoloChannelIndependent(nn.Module):
             attn_in: (B*N, L, D)
             output:  (B, pred_len, N)
 
-    Nesta versao nao ha mistura entre canais. A arquitetura preserva a dimensao
-    de canais para facilitar extensoes futuras com informacao cruzada.
+    Nesta versao nao ha mistura entre canais mas atenção temporal compartilhada entre canais.
+    Ou seja: atenção com parâmetros compartilhados no domínio dos canais porém, cada token de um canal só olha para a 
+    própria série. 
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
                  dropout=0.1, loss_name='mse', use_all_timesteps=True,
