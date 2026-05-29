@@ -4,6 +4,11 @@ import argparse
 import os
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import pandas as pd
+
 from loader.data_loader import TimeSeriesDataset
 from torch.utils.data import DataLoader
 
@@ -19,6 +24,37 @@ MODEL_REGISTRY = {
     "AttentionSolo": AttentionSolo,
     "AttentionSoloChannelIndependent": AttentionSoloChannelIndependent,
 }
+
+
+def salvar_relatorio_loss_treino(train_losses, output_dir):
+    """Salva histórico e gráfico da loss de treino no diretório da previsão."""
+    if not train_losses:
+        return None, None
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    loss_df = pd.DataFrame({
+        "epoch": range(1, len(train_losses) + 1),
+        "train_loss": train_losses,
+    })
+
+    csv_path = output_dir / "train_loss.csv"
+    png_path = output_dir / "train_loss.png"
+
+    loss_df.to_csv(csv_path, index=False)
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(loss_df["epoch"], loss_df["train_loss"], marker="o", linewidth=1.8)
+    plt.title("Loss de treino por época")
+    plt.xlabel("Época")
+    plt.ylabel("Train loss")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+    return csv_path, png_path
 
 
 def main():
@@ -120,10 +156,14 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     trainer = Trainer(model=model, optimizer=optimizer, device=device)
 
+    train_losses = []
+
     print("\nIniciando treinamento...")
     for epoch in range(args.epochs):
         train_loss = trainer.train_one_epoch(train_loader)
-        if epoch % 5 == 0 or epoch == len(args.epochs)-1:
+        train_losses.append(train_loss)
+
+        if epoch == 0 or (epoch + 1) % 5 == 0 or epoch == args.epochs - 1:
             print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
     # ====================== ROLLING FORECAST (APENAS TESTE) ======================
@@ -136,6 +176,11 @@ def main():
         dataset_name=args.base_de_dados,
         extra_dirs=args.extra_dirs
     )
+
+    loss_csv, loss_png = salvar_relatorio_loss_treino(train_losses, forecast_dir)
+    if loss_csv is not None:
+        print(f"✅ Histórico da loss de treino salvo em: {loss_csv}")
+        print(f"✅ Gráfico da loss de treino salvo em: {loss_png}")
 
     print(f"\n✅ Pipeline concluído! Previsões fora da amostra salvas em: {forecast_dir}")
 
