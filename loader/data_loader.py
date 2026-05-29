@@ -21,7 +21,7 @@ class TimeSeriesDataset(Dataset):
         print("Colunas originais:", df.columns.tolist())
 
         df_pivot = df.pivot(index='date', columns='cols', values='data')
-        df_pivot = df_pivot.fillna(method='ffill').fillna(method='bfill')
+        df_pivot = df_pivot.ffill().bfill()
         
         if cols is None:
             # === MULTIVARIATE ===
