@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class DilateLoss(nn.Module):
@@ -95,10 +94,73 @@ class DilateLoss(nn.Module):
         return self.alpha * loss_shape + (1.0 - self.alpha) * loss_temporal
 
 
-def get_loss(loss_name='mse'):
+def _str2bool(value):
+    if isinstance(value, bool):
+        return value
+    value = value.lower()
+    if value in {"true", "1", "yes", "y", "sim", "s"}:
+        return True
+    if value in {"false", "0", "no", "n", "nao", "não"}:
+        return False
+    raise ValueError(f"Valor booleano inválido: {value}")
+
+
+def add_loss_arguments(parser):
+    """Adiciona ao parser os argumentos imputáveis via .sh para configurar losses."""
+    loss_group = parser.add_argument_group("loss")
+    loss_group.add_argument(
+        "--loss",
+        "--loss_name",
+        dest="loss_name",
+        type=str,
+        default="mse",
+        choices=["mse", "mae", "dilate"],
+        help="Função de perda usada no treinamento.",
+    )
+    loss_group.add_argument(
+        "--dilate_alpha",
+        "--dilate-alpha",
+        dest="dilate_alpha",
+        type=float,
+        default=0.5,
+        help="Peso da componente shape da DILATE. A temporal recebe 1-alpha.",
+    )
+    loss_group.add_argument(
+        "--dilate_gamma",
+        "--dilate-gamma",
+        dest="dilate_gamma",
+        type=float,
+        default=0.01,
+        help="Parâmetro de suavização do Soft-DTW usado pela DILATE.",
+    )
+    loss_group.add_argument(
+        "--dilate_normalize",
+        "--dilate-normalize",
+        dest="dilate_normalize",
+        type=_str2bool,
+        default=True,
+        help="Normaliza a penalização temporal da DILATE pelo horizonte.",
+    )
+    return parser
+
+
+def get_loss_kwargs_from_args(args):
+    """Extrai dos args apenas os parâmetros necessários para instanciar a loss."""
+    return {
+        "alpha": getattr(args, "dilate_alpha", 0.5),
+        "gamma": getattr(args, "dilate_gamma", 0.01),
+        "normalize": getattr(args, "dilate_normalize", True),
+    }
+
+
+def get_loss(loss_name="mse", **loss_kwargs):
     loss_name = loss_name.lower()
-    if loss_name == 'dilate':
-        return DilateLoss(alpha=0.5, gamma=0.01)
-    if loss_name == 'mae':
+    if loss_name == "dilate":
+        return DilateLoss(
+            alpha=loss_kwargs.get("alpha", 0.5),
+            gamma=loss_kwargs.get("gamma", 0.01),
+            normalize=loss_kwargs.get("normalize", True),
+        )
+    if loss_name == "mae":
         return nn.L1Loss()
     return nn.MSELoss()
