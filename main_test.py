@@ -69,7 +69,6 @@ def main():
     parser.add_argument('--pred_len', type=int, default=24)
     parser.add_argument('--test_ratio', type=float, default=0.2)
     parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--loss_name', type=str, default='mse')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
     parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
@@ -80,8 +79,8 @@ def main():
         choices=list(MODEL_REGISTRY.keys()),
         help='Modelo a ser treinado/executado'
     )
-    args = parser.parse_args()
     add_loss_arguments(parser)
+    args = parser.parse_args()
 
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
