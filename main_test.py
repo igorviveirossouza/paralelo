@@ -1,8 +1,12 @@
 # %%
-import torch
-import argparse
 import os
 from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path("/tmp") / f"matplotlib-{os.getuid()}"))
+Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+
+import torch
+import argparse
 
 import matplotlib
 matplotlib.use("Agg")
