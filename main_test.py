@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--loss_name', type=str, default='mse')
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
+    parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
     parser.add_argument(
         '--model_name',
         type=str,
@@ -122,7 +123,8 @@ def main():
     print("\nIniciando treinamento...")
     for epoch in range(args.epochs):
         train_loss = trainer.train_one_epoch(train_loader)
-        print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
+        if epoch % 5 == 0 or epoch == len(args.epochs)-1:
+            print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
     # ====================== ROLLING FORECAST (APENAS TESTE) ======================
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
@@ -131,11 +133,11 @@ def main():
         model=model,
         dataset=test_dataset,
         output_dir=args.output_dir,
-        dataset_name=args.base_de_dados
+        dataset_name=args.base_de_dados,
+        extra_dirs=args.extra_dirs
     )
 
     print(f"\n✅ Pipeline concluído! Previsões fora da amostra salvas em: {forecast_dir}")
-
 
 if __name__ == "__main__":
     main()

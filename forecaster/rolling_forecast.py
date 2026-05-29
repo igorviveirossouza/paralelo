@@ -21,6 +21,7 @@ def run_one_step_rolling_forecast(
     batch_size=1,
     dataset_name=None,
     run_date=None,
+    extra_dirs=None,
 ):
     """
     Rolling forecast SOMENTE PREVISÕES (sem valores true).
@@ -34,12 +35,19 @@ def run_one_step_rolling_forecast(
     model_name = model.__class__.__name__
     run_date = run_date or datetime.now().strftime("%Y-%m-%d")
 
+    extra_dirs = extra_dirs or []
+
     final_output_dir = (
         Path(output_dir)
         / _sanitize_path_part(dataset_name)
         / _sanitize_path_part(model_name)
-        / _sanitize_path_part(run_date)
     )
+    
+    for paths in extra_dirs:
+        final_output_dir = final_output_dir / _sanitize_path_part(paths)
+
+    final_output_dir = final_output_dir / _sanitize_path_part(run_date)        
+    
     final_output_dir.mkdir(parents=True, exist_ok=True)
 
     device = next(model.parameters()).device

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p gorgonas_dev
+#SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
 #SBATCH --time=00:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
@@ -21,4 +21,6 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --lookback 96 \
     --pred_len 24 \
     --batch_size 16\
-    --epochs 8\
+    --epochs 250\
+    --extra_dirs epochs_250\
+    --model_name AttentionSoloChannelIndependent
