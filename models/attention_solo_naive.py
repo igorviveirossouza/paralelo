@@ -9,7 +9,7 @@ class AttentionSoloNaive(nn.Module):
     Compatível com interface do TFB / TIOMS.
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
-                 dropout=0.1, loss_name='mse'):
+                 dropout=0.1, loss_name='mse', loss_kwargs=None):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
@@ -23,7 +23,7 @@ class AttentionSoloNaive(nn.Module):
         # Decoder linear (projection)
         self.projection = nn.Linear(d_model, enc_in)
 
-        self.loss_fn = get_loss(loss_name)
+        self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
     def forward(self, x, y=None, return_loss=False):
         # x: (batch, seq_len, features)
