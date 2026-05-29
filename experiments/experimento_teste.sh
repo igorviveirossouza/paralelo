@@ -18,9 +18,13 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
 
 "$PYTHON_BIN" ./main_test.py \
     --base_de_dados b3_daily_financeiro.csv \
-    --lookback 96 \
+    --lookback 32 \
     --pred_len 24 \
     --batch_size 16\
     --epochs 250\
-    --extra_dirs epochs_250\
-    --model_name AttentionSoloChannelIndependent
+    --extra_dirs epochs_250 lookback_32 dilate\
+    --model_name AttentionSoloChannelIndependent\
+    --loss dilate \
+    --dilate_alpha 0.7 \
+    --dilate_gamma 0.05 \
+    --dilate_normalize true

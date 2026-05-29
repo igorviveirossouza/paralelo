@@ -21,7 +21,7 @@ from models.attention_solo_naive import AttentionSoloNaive
 from models.attention_solo_channel_independent import AttentionSoloChannelIndependent
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
-
+from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
 
 MODEL_REGISTRY = {
     "AttentionSoloNaive": AttentionSoloNaive,
@@ -81,6 +81,7 @@ def main():
         help='Modelo a ser treinado/executado'
     )
     args = parser.parse_args()
+    add_loss_arguments(parser)
 
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
@@ -148,7 +149,8 @@ def main():
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
-        loss_name=args.loss_name
+        loss_name=args.loss_name,
+        loss_kwargs=get_loss_kwargs_from_args(args)
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
