@@ -27,8 +27,9 @@ class AttentionSoloChannelIndependent(nn.Module):
     própria série. 
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
-                 dropout=0.1, loss_name='mse', loss_kwargs=None, use_all_timesteps=True,
-                 channel_specific_embedding=True, channel_specific_projection=True):
+                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
+                 use_all_timesteps=True, channel_specific_embedding=True,
+                 channel_specific_projection=True):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
@@ -41,7 +42,8 @@ class AttentionSoloChannelIndependent(nn.Module):
             c_in=enc_in,
             d_model=d_model,
             dropout=dropout,
-            channel_specific=channel_specific_embedding
+            channel_specific=channel_specific_embedding,
+            **(embedding_kwargs or {})
         )
 
         self.attention = nn.MultiheadAttention(
