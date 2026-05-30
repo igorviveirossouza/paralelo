@@ -9,13 +9,18 @@ class AttentionSoloNaive(nn.Module):
     Compatível com interface do TFB / TIOMS.
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
-                 dropout=0.1, loss_name='mse', loss_kwargs=None):
+                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
         self.enc_in = enc_in  # número de canais (variáveis)
 
-        self.embedding = TemporalEmbedding(enc_in, d_model, dropout)
+        self.embedding = TemporalEmbedding(
+            enc_in,
+            d_model,
+            dropout,
+            **(embedding_kwargs or {})
+        )
 
         # Camada de atenção multi-head simples
         self.attention = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
