@@ -22,6 +22,7 @@ from models.attention_solo_channel_independent import AttentionSoloChannelIndepe
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
+from utils.embeddings import add_embedding_arguments, get_embedding_kwargs_from_args
 
 MODEL_REGISTRY = {
     "AttentionSoloNaive": AttentionSoloNaive,
@@ -80,11 +81,13 @@ def main():
         help='Modelo a ser treinado/executado'
     )
     add_loss_arguments(parser)
+    add_embedding_arguments(parser)
     args = parser.parse_args()
 
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
     print(f"  Modelo: {args.model_name}")
+    print(f"  Embedding: {args.embedding_type}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
@@ -149,7 +152,8 @@ def main():
         pred_len=args.pred_len,
         enc_in=enc_in,
         loss_name=args.loss_name,
-        loss_kwargs=get_loss_kwargs_from_args(args)
+        loss_kwargs=get_loss_kwargs_from_args(args),
+        embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
