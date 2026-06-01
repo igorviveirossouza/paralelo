@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 
 
-import torch
-import torch.nn as nn
-
-
 class DilateLoss(nn.Module):
     """
     DILATE loss: shape loss via Soft-DTW + temporal distortion loss.
@@ -49,7 +45,6 @@ class DilateLoss(nn.Module):
 
         t = x.size(-2)
         c = x.size(-1)
-
         return x.reshape(-1, t, c)
 
     def _pairwise_distances(self, pred, target):
@@ -65,37 +60,50 @@ class DilateLoss(nn.Module):
 
     def _soft_dtw(self, D):
         """
-        D: [B, T, T]
+        Versão mais segura para autograd.
 
+        Evita:
+          - operações in-place em R[:, i, j];
+          - uso direto de inf na programação dinâmica;
+          - NaNs em logsumexp/gradiente.
+
+        D: [B, T, T]
         Retorna:
           soft-DTW por amostra: [B]
         """
         batch_size, t, _ = D.shape
+        device = D.device
+        dtype = D.dtype
 
-        inf = torch.tensor(float("inf"), device=D.device, dtype=D.dtype)
+        huge_val = torch.tensor(1e8, device=device, dtype=dtype)
 
-        R = torch.full(
-            (batch_size, t + 2, t + 2),
-            inf,
-            device=D.device,
-            dtype=D.dtype,
+        previous_row = torch.full(
+            (batch_size, t + 1),
+            huge_val,
+            device=device,
+            dtype=dtype,
         )
+        previous_row[:, 0] = 0.0
 
-        R[:, 0, 0] = 0.0
+        rows = [previous_row]
 
         for i in range(1, t + 1):
+            current_row = [huge_val.expand(batch_size)]
+
             for j in range(1, t + 1):
-                r0 = -R[:, i - 1, j - 1] / self.gamma
-                r1 = -R[:, i - 1, j] / self.gamma
-                r2 = -R[:, i, j - 1] / self.gamma
+                r0 = -rows[i - 1][:, j - 1] / self.gamma  # diagonal
+                r1 = -rows[i - 1][:, j] / self.gamma      # cima
+                r2 = -current_row[j - 1] / self.gamma     # esquerda
 
                 r = torch.stack([r0, r1, r2], dim=-1)
-
                 softmin = -self.gamma * torch.logsumexp(r, dim=-1)
 
-                R[:, i, j] = D[:, i - 1, j - 1] + softmin
+                value = D[:, i - 1, j - 1] + softmin
+                current_row.append(value)
 
-        return R[:, t, t]
+            rows.append(torch.stack(current_row, dim=1))
+
+        return rows[-1][:, -1]
 
     def forward(self, pred, target):
         pred = self._prepare(pred)
@@ -109,16 +117,15 @@ class DilateLoss(nn.Module):
 
         t = pred.size(1)
 
-        # Matriz de custo entre previsão e alvo
+        # Matriz de custo entre previsão e alvo.
         D = self._pairwise_distances(pred, target)  # [B, T, T]
 
-        # Termo de forma: soft-DTW
+        # Termo de forma: Soft-DTW.
         soft_dtw = self._soft_dtw(D)  # [B]
         loss_shape = soft_dtw.mean()
 
         # Matriz de alinhamento suave.
-        # Importante: usar soft_dtw.sum(), não loss_shape.
-        # Se usarmos loss_shape, o gradiente fica dividido pelo batch size.
+        # Usar soft_dtw.sum() evita dividir o gradiente pelo batch size.
         alignment = torch.autograd.grad(
             soft_dtw.sum(),
             D,
@@ -127,20 +134,18 @@ class DilateLoss(nn.Module):
             only_inputs=True,
         )[0]  # [B, T, T]
 
-        # Matriz de penalização temporal Omega
+        # Matriz de penalização temporal Omega.
         idx = torch.arange(t, device=pred.device, dtype=pred.dtype)
         omega = (idx[:, None] - idx[None, :]).pow(2)  # [T, T]
 
-        # Termo temporal da DILATE
+        # Termo temporal da DILATE.
         loss_temporal = torch.sum(
             alignment * omega.unsqueeze(0),
             dim=(1, 2),
         ).mean() / (t * t)
 
-        # Combinação shape + temporal
-        loss = self.alpha * loss_shape + (1.0 - self.alpha) * loss_temporal
+        return self.alpha * loss_shape + (1.0 - self.alpha) * loss_temporal
 
-        return loss
 
 def _str2bool(value):
     if isinstance(value, bool):
@@ -181,14 +186,6 @@ def add_loss_arguments(parser):
         default=0.01,
         help="Parâmetro de suavização do Soft-DTW usado pela DILATE.",
     )
-    #loss_group.add_argument(
-    #    "--dilate_normalize",
-    #    "--dilate-normalize",
-    #    dest="dilate_normalize",
-    #    type=_str2bool,
-    #    default=True,
-    #    help="Normaliza a penalização temporal da DILATE pelo horizonte.",
-    #)
     return parser
 
 
@@ -197,7 +194,6 @@ def get_loss_kwargs_from_args(args):
     return {
         "alpha": getattr(args, "dilate_alpha", 0.5),
         "gamma": getattr(args, "dilate_gamma", 0.01),
-        #"normalize": getattr(args, "dilate_normalize", True),
     }
 
 
@@ -207,7 +203,6 @@ def get_loss(loss_name="mse", **loss_kwargs):
         return DilateLoss(
             alpha=loss_kwargs.get("alpha", 0.5),
             gamma=loss_kwargs.get("gamma", 0.01),
-            #normalize=loss_kwargs.get("normalize", True),
         )
     if loss_name == "mae":
         return nn.L1Loss()
