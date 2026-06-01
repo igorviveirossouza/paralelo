@@ -4,9 +4,9 @@ from utils.embeddings import ChannelIndependentTemporalEmbedding
 from utils.custom_losses import get_loss
 
 
-class AttentionSoloChannelIndependent(nn.Module):
+class TransformerChannelIndependent(nn.Module):
     """
-    AttentionSolo com processamento independente por canal.
+    TRansformer com processamento independente por canal.
 
     Ideia teorica:
         Equivale a passar uma serie por vez pelo embedding, pela self-attention
@@ -20,6 +20,8 @@ class AttentionSoloChannelIndependent(nn.Module):
             x:       (B, L, N)
             emb:     (B, N, L, D)
             attn_in: (B*N, L, D)
+            layer norm (B*N,L,D)
+            feed_foward (B,N,L,D)
             output:  (B, pred_len, N)
 
     Nesta versao nao ha mistura entre canais mas atenção temporal compartilhada entre canais.
@@ -53,6 +55,20 @@ class AttentionSoloChannelIndependent(nn.Module):
             batch_first=True
         )
 
+        self.dropout_attn = nn.Dropout(dropout)
+        self.dropout_ffn = nn.Dropout(dropout)
+
+        self.norm1 = nn.LayerNorm(d_model)
+
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, 4 * d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(4 * d_model, d_model),
+        )
+        self.norm2 = nn.LayerNorm(d_model)
+
+
         projection_in = lookback * d_model if use_all_timesteps else d_model
 
         if channel_specific_projection:
@@ -85,10 +101,17 @@ class AttentionSoloChannelIndependent(nn.Module):
         attn_input = x_emb.reshape(batch * channels, seq_len, self.d_model)
         attn_output, _ = self.attention(attn_input, attn_input, attn_input)  # Q, K, V
 
+        z = self.norm1(attn_input + self.dropout_attn(attn_output))
+
+        ffn_output = self.ffn(z)
+
+        z = self.norm2(z+self.dropout_ffn(ffn_output))
+
+
         if self.use_all_timesteps:
-            h = attn_output.reshape(batch, channels, seq_len * self.d_model)
+            h = z.reshape(batch, channels, seq_len * self.d_model)
         else:
-            h = attn_output[:, -1, :].reshape(batch, channels, self.d_model)
+            h = z[:, -1, :].reshape(batch, channels, self.d_model)
 
         # Projecao por canal para pred_len passos futuros.
         if self.channel_specific_projection:

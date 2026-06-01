@@ -8,6 +8,7 @@
 set -euo pipefail
 
 echo "=== Job iniciado em $(date) ==="
+START_TIME=$(date +%s)
 echo "Hostname: $(hostname)"
 echo "GPU disponível: $(nvidia-smi -L)"
 
@@ -22,10 +23,14 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --pred_len 24 \
     --batch_size 16\
     --epochs 50\
-    --extra_dirs epochs_50 lookback_32 dilate_nova alpha_03 gamma_02\
-    --model_name AttentionSoloChannelIndependent\
+    --extra_dirs epochs_50 lookback_32 dilate\
+    --model_name Transformer\
     --loss dilate \
     --dilate_alpha 0.3 \
-    --dilate_gamma 0.2 \
+    --dilate_gamma 0.001 \
     
-echo "=== Job Finalizado em $(date) ==="
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+echo "Job finalizado em: $(date)"
+echo "Tempo total: ${ELAPSED} segundos"
+echo "Tempo total: $((ELAPSED / 60)) min $((ELAPSED % 60)) s"
