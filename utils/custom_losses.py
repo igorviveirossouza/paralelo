@@ -181,14 +181,14 @@ def add_loss_arguments(parser):
         default=0.01,
         help="Parâmetro de suavização do Soft-DTW usado pela DILATE.",
     )
-    loss_group.add_argument(
-        "--dilate_normalize",
-        "--dilate-normalize",
-        dest="dilate_normalize",
-        type=_str2bool,
-        default=True,
-        help="Normaliza a penalização temporal da DILATE pelo horizonte.",
-    )
+    #loss_group.add_argument(
+    #    "--dilate_normalize",
+    #    "--dilate-normalize",
+    #    dest="dilate_normalize",
+    #    type=_str2bool,
+    #    default=True,
+    #    help="Normaliza a penalização temporal da DILATE pelo horizonte.",
+    #)
     return parser
 
 
@@ -197,7 +197,7 @@ def get_loss_kwargs_from_args(args):
     return {
         "alpha": getattr(args, "dilate_alpha", 0.5),
         "gamma": getattr(args, "dilate_gamma", 0.01),
-        "normalize": getattr(args, "dilate_normalize", True),
+        #"normalize": getattr(args, "dilate_normalize", True),
     }
 
 
@@ -207,7 +207,7 @@ def get_loss(loss_name="mse", **loss_kwargs):
         return DilateLoss(
             alpha=loss_kwargs.get("alpha", 0.5),
             gamma=loss_kwargs.get("gamma", 0.01),
-            normalize=loss_kwargs.get("normalize", True),
+            #normalize=loss_kwargs.get("normalize", True),
         )
     if loss_name == "mae":
         return nn.L1Loss()

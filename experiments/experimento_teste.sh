@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --time=00:30:00
+#SBATCH --time=08:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
@@ -21,10 +21,11 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --lookback 32 \
     --pred_len 24 \
     --batch_size 16\
-    --epochs 250\
-    --extra_dirs epochs_250 lookback_32 dilate\
+    --epochs 50\
+    --extra_dirs epochs_50 lookback_32 dilate_nova alpha_03 gamma_02\
     --model_name AttentionSoloChannelIndependent\
     --loss dilate \
-    --dilate_alpha 0.7 \
-    --dilate_gamma 0.05 \
-    --dilate_normalize true
+    --dilate_alpha 0.3 \
+    --dilate_gamma 0.2 \
+    
+echo "=== Job Finalizado em $(date) ==="
