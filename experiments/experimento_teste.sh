@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --time=08:30:00
+#SBATCH --time=02:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
@@ -23,9 +23,11 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --pred_len 24 \
     --batch_size 16\
     --epochs 50\
-    --extra_dirs epochs_50 lookback_32 dilate\
-    --model_name Transformer\
-    --loss dilate \
+    --extra_dirs epochs_50 lookback_32 mse embed_lag_linear\
+    --model_name TransformerSpecific\
+    --embedding_type "lag_linear"\
+    --embedding_lag_size 10\
+    --loss mse \
     --dilate_alpha 0.3 \
     --dilate_gamma 0.001 \
     

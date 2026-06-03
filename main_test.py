@@ -19,7 +19,10 @@ from torch.utils.data import DataLoader
 from models.attention_solo import AttentionSolo
 from models.attention_solo_naive import AttentionSoloNaive
 from models.attention_solo_channel_independent import AttentionSoloChannelIndependent
+from models.attention_solo_channel_independent_shared_specific import AttentionSoloChannelIndependentSharedSpecific
 from models.transformer import TransformerChannelIndependent
+from models.transformer_shared_specific import TransformerChannelIndependentSharedSpecific
+
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
@@ -29,7 +32,9 @@ MODEL_REGISTRY = {
     "AttentionSoloNaive": AttentionSoloNaive,
     "AttentionSolo": AttentionSolo,
     "AttentionSoloChannelIndependent": AttentionSoloChannelIndependent,
+    "AttentionSoloChannelIndependentSharedSpecific": AttentionSoloChannelIndependentSharedSpecific,
     "Transformer": TransformerChannelIndependent,
+    "TransformerSpecific": TransformerChannelIndependentSharedSpecific,
 }
 
 
