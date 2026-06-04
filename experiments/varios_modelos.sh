@@ -2,7 +2,7 @@
 #SBATCH -p medusas_shr
 # ~  SBATCH -p gorgonas_dev
 #SBATCH --gres=gpu:1
-#SBATCH --time=06:30:00
+#SBATCH --time=08:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
@@ -10,17 +10,16 @@ set -euo pipefail
 
 EXPERIMENTO=(
     "mse"
-    "lookback_32"
-    "epochs_100"
+    "lookback_492"
+    "epochs_1000"
 )
 
 MODELOS=(
-    #"AttentionSolo"
-    #"AttentionSoloChannelIndependent"
+    "AttentionSolo"
+    "AttentionSoloChannelIndependent"
     AttentionSoloChannelIndependentSharedSpecific
-    #"Transformer"
-    #"TransformerSpecific"
-
+    "Transformer"
+    "TransformerSpecific"
 )
 
 echo "=== Job iniciado em $(date) ==="
@@ -48,10 +47,10 @@ for MODEL_NAME in "${MODELOS[@]}"; do
 
     "$PYTHON_BIN" ./main_test.py \
         --base_de_dados b3_daily_financeiro.csv \
-        --lookback 32 \
+        --lookback 492 \
         --pred_len 24 \
         --batch_size 16 \
-        --epochs 100 \
+        --epochs 1000 \
         --extra_dirs "${EXPERIMENTO[@]}" \
         --model_name "$MODEL_NAME" \
         --embedding_type "linear" \
