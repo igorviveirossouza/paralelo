@@ -45,7 +45,7 @@ def run_one_step_rolling_forecast(
     for paths in extra_dirs:
         final_output_dir = final_output_dir / _sanitize_path_part(paths)
 
-    final_output_dir = final_output_dir / _sanitize_path_part(run_date) / _sanitize_path_part(model_name)        
+    final_output_dir = final_output_dir / _sanitize_path_part(model_name)        
     
     final_output_dir.mkdir(parents=True, exist_ok=True)
 

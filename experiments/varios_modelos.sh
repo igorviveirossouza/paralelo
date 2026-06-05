@@ -11,15 +11,17 @@ set -euo pipefail
 EXPERIMENTO=(
     "mse"
     "lookback_492"
-    "epochs_1000"
+    "epochs_500"
 )
 
 MODELOS=(
-    "AttentionSolo"
-    "AttentionSoloChannelIndependent"
-    AttentionSoloChannelIndependentSharedSpecific
-    "Transformer"
-    "TransformerSpecific"
+    #"AttentionSolo"
+    #"AttentionSoloChannelIndependent"
+    #AttentionSoloChannelIndependentSharedSpecific
+    "AttentionSoloChannelIndependentShrINSpec"
+    #"Transformer"
+    #"TransformerSpecific"
+    "TransformerShrINSpec"
 )
 
 echo "=== Job iniciado em $(date) ==="
@@ -50,7 +52,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
         --lookback 492 \
         --pred_len 24 \
         --batch_size 16 \
-        --epochs 1000 \
+        --epochs 500 \
         --extra_dirs "${EXPERIMENTO[@]}" \
         --model_name "$MODEL_NAME" \
         --embedding_type "linear" \

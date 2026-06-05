@@ -20,9 +20,10 @@ from models.attention_solo import AttentionSolo
 from models.attention_solo_naive import AttentionSoloNaive
 from models.attention_solo_channel_independent import AttentionSoloChannelIndependent
 from models.attention_solo_channel_independent_shared_specific import AttentionSoloChannelIndependentSharedSpecific
+from models.attention_solo_channel_independent_sharedINspecific import AttentionSoloChannelIndependentSharedINSpecific
 from models.transformer import TransformerChannelIndependent
 from models.transformer_shared_specific import TransformerChannelIndependentSharedSpecific
-
+from models.transformer_sharedINspecific import TransformerChannelIndependentSharedINSpecific
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
@@ -33,9 +34,13 @@ MODEL_REGISTRY = {
     "AttentionSolo": AttentionSolo,
     "AttentionSoloChannelIndependent": AttentionSoloChannelIndependent,
     "AttentionSoloChannelIndependentSharedSpecific": AttentionSoloChannelIndependentSharedSpecific,
+    "AttentionSoloChannelIndependentShrINSpec": AttentionSoloChannelIndependentSharedINSpecific,
+    
     "Transformer": TransformerChannelIndependent,
     "TransformerSpecific": TransformerChannelIndependentSharedSpecific,
+    "TransformerShrINSpec": TransformerChannelIndependentSharedINSpecific,
 }
+
 
 
 def salvar_relatorio_loss_treino(train_losses, output_dir):
