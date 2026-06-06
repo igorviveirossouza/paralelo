@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from utils.embeddings import ChannelIndependentTemporalEmbedding
 from utils.custom_losses import get_loss
+from utils.revin import RevIN
 
 
 class AttentionSoloChannelIndependent(nn.Module):
@@ -29,7 +30,7 @@ class AttentionSoloChannelIndependent(nn.Module):
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
                  dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
                  use_all_timesteps=True, channel_specific_embedding=True,
-                 channel_specific_projection=True):
+                 channel_specific_projection=True, revin=False):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
@@ -37,6 +38,8 @@ class AttentionSoloChannelIndependent(nn.Module):
         self.d_model = d_model
         self.use_all_timesteps = use_all_timesteps
         self.channel_specific_projection = channel_specific_projection
+        self.revin_enabled = revin
+        self.revin = RevIN(enc_in) if revin else None
 
         self.embedding = ChannelIndependentTemporalEmbedding(
             c_in=enc_in,
@@ -78,6 +81,9 @@ class AttentionSoloChannelIndependent(nn.Module):
         if self.use_all_timesteps and seq_len != self.lookback:
             raise ValueError(f"Esperado seq_len={self.lookback}, recebido {seq_len}")
 
+        if self.revin_enabled:
+            x = self.revin(x, mode="norm")
+
         # Embedding sem mistura de canais: (B, N, L, D)
         x_emb = self.embedding(x)
 
@@ -99,6 +105,9 @@ class AttentionSoloChannelIndependent(nn.Module):
         else:
             output = self.projection(h.reshape(batch * channels, -1))
             output = output.reshape(batch, channels, self.pred_len).transpose(1, 2)
+
+        if self.revin_enabled:
+            output = self.revin(output, mode="denorm")
 
         # output: (B, pred_len, N)
         if return_loss and y is not None:
