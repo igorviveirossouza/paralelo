@@ -28,6 +28,7 @@ from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
 from utils.embeddings import add_embedding_arguments, get_embedding_kwargs_from_args
+from utils.revin_model_wrapper import RevINModelWrapper
 
 MODEL_REGISTRY = {
     "AttentionSoloNaive": AttentionSoloNaive,
@@ -35,16 +36,24 @@ MODEL_REGISTRY = {
     "AttentionSoloChannelIndependent": AttentionSoloChannelIndependent,
     "AttentionSoloChannelIndependentSharedSpecific": AttentionSoloChannelIndependentSharedSpecific,
     "AttentionSoloChannelIndependentShrINSpec": AttentionSoloChannelIndependentSharedINSpecific,
-    
     "Transformer": TransformerChannelIndependent,
     "TransformerSpecific": TransformerChannelIndependentSharedSpecific,
     "TransformerShrINSpec": TransformerChannelIndependentSharedINSpecific,
 }
 
 
+def str2bool(value):
+    if isinstance(value, bool):
+        return value
+    value = value.lower()
+    if value in {"true", "1", "yes", "y", "sim"}:
+        return True
+    if value in {"false", "0", "no", "n", "nao", "não"}:
+        return False
+    raise argparse.ArgumentTypeError("Valor booleano inválido.")
+
 
 def salvar_relatorio_loss_treino(train_losses, output_dir):
-    """Salva histórico e gráfico da loss de treino no diretório da previsão."""
     if not train_losses:
         return None, None
 
@@ -85,6 +94,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
     parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
+    parser.add_argument('--revin', type=str2bool, default=False, help='Ativa RevIN: true/false')
     parser.add_argument(
         '--model_name',
         type=str,
@@ -100,17 +110,17 @@ def main():
     print(f"  Base de dados: {args.base_de_dados}")
     print(f"  Modelo: {args.model_name}")
     print(f"  Embedding: {args.embedding_type}")
+    print(f"  RevIN: {args.revin}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
     print(f"  cols: {args.cols if args.cols else 'Multivariate'}\n")
 
-    # ====================== RESOLUÇÃO DO CAMINHO ======================
     possible_paths = [
-        args.base_de_dados,                                           # caminho direto
-        f"data/{args.base_de_dados}",                                 # pasta data (principal)
+        args.base_de_dados,
+        f"data/{args.base_de_dados}",
         str(Path("data") / args.base_de_dados),
-        f"attachments/{args.base_de_dados}",                          # fallback
+        f"attachments/{args.base_de_dados}",
         str(Path("/home/workdir/attachments") / args.base_de_dados),
     ]
 
@@ -127,7 +137,6 @@ def main():
             f"Procurei em:\n" + "\n".join(possible_paths)
         )
 
-    # ====================== DATASETS ======================
     train_dataset = TimeSeriesDataset(
         data_path=data_path,
         lookback=args.lookback,
@@ -148,37 +157,41 @@ def main():
         test_ratio=args.test_ratio
     )
 
-    # DataLoader para treino
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-
     print(f"\nDataLoader de treino criado com {len(train_loader)} batches\n")
 
-    # ====================== MODELO ======================
     sample_x, _ = train_dataset[0]
     enc_in = sample_x.shape[1]
     print(f"Features detectadas: {enc_in}")
 
+    loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
     model = model_class(
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
         loss_name=args.loss_name,
-        loss_kwargs=get_loss_kwargs_from_args(args),
+        loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
+
+    if args.revin:
+        model = RevINModelWrapper(
+            model=model,
+            enc_in=enc_in,
+            loss_name=args.loss_name,
+            loss_kwargs=loss_kwargs
+        )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     print(f"Modelo carregado: {model.__class__.__name__}")
     print(f"Modelo carregado no device: {device}")
 
-    # ====================== TREINAMENTO ======================
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     trainer = Trainer(model=model, optimizer=optimizer, device=device)
 
     train_losses = []
-
     print("\nIniciando treinamento...")
     for epoch in range(args.epochs):
         train_loss = trainer.train_one_epoch(train_loader)
@@ -187,9 +200,7 @@ def main():
         if epoch == 0 or (epoch + 1) % 5 == 0 or epoch == args.epochs - 1:
             print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
-    # ====================== ROLLING FORECAST (APENAS TESTE) ======================
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
-    
     forecast_dir = run_one_step_rolling_forecast(
         model=model,
         dataset=test_dataset,
