@@ -2,28 +2,14 @@ import torch
 import torch.nn as nn
 from utils.embeddings import ChannelIndependentTemporalEmbedding
 from utils.custom_losses import get_loss
+from utils.revin import RevIN
 
 
 class AttentionSoloChannelIndependentSharedINSpecific(nn.Module):
-    """
-    AttentionSolo channel-independent com dois caminhos:
-      1) atenção temporal compartilhada entre canais;
-      2) atenção temporal específica por canal.
-
-    Fluxo:
-        x:            (B, L, N)
-        emb:          (B, N, L, D)
-        shared_out:   (B, N, L, D)
-        specific_out: (B, N, L, D)
-        soma:         (B, N, L, D)
-        output:       (B, pred_len, N)
-
-    Não há mistura temporal entre canais: cada canal olha apenas para a própria série.
-    """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
                  dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
                  use_all_timesteps=True, channel_specific_embedding=True,
-                 channel_specific_projection=True):
+                 channel_specific_projection=True, revin=False):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
@@ -31,6 +17,8 @@ class AttentionSoloChannelIndependentSharedINSpecific(nn.Module):
         self.d_model = d_model
         self.use_all_timesteps = use_all_timesteps
         self.channel_specific_projection = channel_specific_projection
+        self.revin_enabled = revin
+        self.revin = RevIN(enc_in) if revin else None
 
         self.embedding = ChannelIndependentTemporalEmbedding(
             c_in=enc_in,
@@ -39,69 +27,46 @@ class AttentionSoloChannelIndependentSharedINSpecific(nn.Module):
             channel_specific=channel_specific_embedding,
             **(embedding_kwargs or {})
         )
-
-        # Caminho específico: uma atenção própria para cada canal.
         self.channel_attentions = nn.ModuleList([
-            nn.MultiheadAttention(
-                d_model,
-                n_heads,
-                dropout=dropout,
-                batch_first=True
-            )
+            nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
             for _ in range(enc_in)
         ])
-
-
-        # Caminho compartilhado: mesmos pesos para todos os canais.
-        self.shared_attention = nn.MultiheadAttention(
-            d_model,
-            n_heads,
-            dropout=dropout,
-            batch_first=True
-        )
-
+        self.shared_attention = nn.MultiheadAttention(d_model, n_heads, dropout=dropout, batch_first=True)
 
         projection_in = lookback * d_model if use_all_timesteps else d_model
-
         if channel_specific_projection:
             self.projections = nn.ModuleList([
                 nn.Linear(projection_in, pred_len) for _ in range(enc_in)
             ])
         else:
             self.projection = nn.Linear(projection_in, pred_len)
-
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
     def forward(self, x, y=None, return_loss=False):
         if x.dim() != 3:
-            raise ValueError(
-                f"Esperado x com shape (batch, seq_len, channels), recebido {tuple(x.shape)}"
-            )
-
+            raise ValueError(f"Esperado x com shape (batch, seq_len, channels), recebido {tuple(x.shape)}")
         batch, seq_len, channels = x.shape
         if channels != self.enc_in:
             raise ValueError(f"Esperado {self.enc_in} canais, recebido {channels}")
-
         if self.use_all_timesteps and seq_len != self.lookback:
             raise ValueError(f"Esperado seq_len={self.lookback}, recebido {seq_len}")
 
-        # (B, N, L, D)
-        x_emb = self.embedding(x)
+        if self.revin_enabled:
+            x = self.revin(x, mode='norm')
 
-        # Caminho compartilhado: (B*N, L, D) -> (B, N, L, D)
+        x_emb = self.embedding(x)
         shared_input = x_emb.reshape(batch * channels, seq_len, self.d_model)
         shared_out, _ = self.shared_attention(shared_input, shared_input, shared_input)
         shared_out = shared_out.reshape(batch, channels, seq_len, self.d_model)
-
         z = x_emb + shared_out
 
-        # Caminho específico por canal: cada papel usa sua própria atenção.
-        specific_out = torch.cat([
-            attention(z[:, i, :, :], z[:, i, :, :], z[:, i, :, :])[0].unsqueeze(1)
-            for i, attention in enumerate(self.channel_attentions)
-        ], dim=1)
+        outputs = []
+        for i, attention_layer in enumerate(self.channel_attentions):
+            channel_x = z[:, i, :, :]
+            channel_out, _ = attention_layer(channel_x, channel_x, channel_x)
+            outputs.append(channel_out.unsqueeze(1))
+        specific_out = torch.cat(outputs, dim=1)
 
-       
         if self.use_all_timesteps:
             h = specific_out.reshape(batch, channels, seq_len * self.d_model)
         else:
@@ -116,10 +81,11 @@ class AttentionSoloChannelIndependentSharedINSpecific(nn.Module):
             output = self.projection(h.reshape(batch * channels, -1))
             output = output.reshape(batch, channels, self.pred_len).transpose(1, 2)
 
+        if self.revin_enabled:
+            output = self.revin(output, mode='denorm')
         if return_loss and y is not None:
             loss = self.loss_fn(output, y[:, -self.pred_len:, :])
             return output, loss
-
         return output
 
     def get_loss(self, pred, target):
