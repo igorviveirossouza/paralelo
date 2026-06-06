@@ -64,18 +64,20 @@ def criar_numero_indice(
     return df
 
 
+dataset = "b3_daily_financeiro.csv"
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Cria dataset B3 daily financeiro em número índice."
     )
     parser.add_argument(
         "--input",
-        default="data/b3_daily_financeiro.csv",
+        default=f"data/{dataset}",
         help="Caminho do CSV original.",
     )
     parser.add_argument(
         "--output",
-        default="data/b3_daily_financeiro_indice.csv",
+        default=f"data/{dataset}",
         help="Caminho do CSV transformado.",
     )
     parser.add_argument(
