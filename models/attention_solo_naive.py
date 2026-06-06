@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from utils.embeddings import TemporalEmbedding
 from utils.custom_losses import get_loss
+from utils.revin import RevIN
 
 class AttentionSoloNaive(nn.Module):
     """
@@ -9,11 +10,14 @@ class AttentionSoloNaive(nn.Module):
     Compatível com interface do TFB / TIOMS.
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
-                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None):
+                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
+                 revin=False):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
         self.enc_in = enc_in  # número de canais (variáveis)
+        self.revin_enabled = revin
+        self.revin = RevIN(enc_in) if revin else None
 
         self.embedding = TemporalEmbedding(
             enc_in,
@@ -34,6 +38,9 @@ class AttentionSoloNaive(nn.Module):
         # x: (batch, seq_len, features)
         batch, seq, feat = x.shape
 
+        if self.revin_enabled:
+            x = self.revin(x, mode="norm")
+
         # Embedding
         x_emb = self.embedding(x)  # (B, L, D)
 
@@ -43,6 +50,9 @@ class AttentionSoloNaive(nn.Module):
         # Projeção para horizonte futuro
         output = self.projection(attn_output[:, -1:, :])  # usa último timestep
         output = output.repeat(1, self.pred_len, 1)  # naive repeat (melhorar depois)
+
+        if self.revin_enabled:
+            output = self.revin(output, mode="denorm")
 
         if return_loss and y is not None:
             loss = self.loss_fn(output, y[:, -self.pred_len:, :])
