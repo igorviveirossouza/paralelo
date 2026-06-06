@@ -27,6 +27,7 @@ cd /sonic_home/igor.viveiros/paralelo || exit 1
     --model_name TransformerSpecific\
     --embedding_type "lag_linear"\
     --embedding_lag_size 10\
+    --revin false\
     --loss mse \
     --dilate_alpha 0.3 \
     --dilate_gamma 0.001 \
