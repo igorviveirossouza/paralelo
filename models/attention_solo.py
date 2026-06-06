@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from utils.embeddings import TemporalEmbedding
 from utils.custom_losses import get_loss
+from utils.revin import RevIN
 
 class AttentionSolo(nn.Module):
     """
@@ -9,12 +10,16 @@ class AttentionSolo(nn.Module):
     Compatível com interface do TFB / TIOMS.
     """
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
-                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None):
+                 dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
+                 revin=False):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
         self.enc_in = enc_in  # número de canais (variáveis)
         self.d_model = d_model
+        self.revin_enabled = revin
+        self.revin = RevIN(enc_in) if revin else None
+
         self.embedding = TemporalEmbedding(
             enc_in,
             d_model,
@@ -35,6 +40,9 @@ class AttentionSolo(nn.Module):
         # x: (batch, seq_len, features)
         batch, seq, feat = x.shape
 
+        if self.revin_enabled:
+            x = self.revin(x, mode="norm")
+
         # Embedding
         x_emb = self.embedding(x)  # (B, L, D)
 
@@ -45,13 +53,14 @@ class AttentionSolo(nn.Module):
         # h = attn_output[:, -1, :]  # (B, D)
         h = attn_output.reshape(batch, self.lookback * self.d_model)
 
-
         # Projeção para horizonte futuro
         output = self.projection(h)
-        
+
         # Reorganiza para matriz futura
         output = output.view(batch, self.pred_len, self.enc_in)  # (B, pred_len, enc_in)
 
+        if self.revin_enabled:
+            output = self.revin(output, mode="denorm")
 
         if return_loss and y is not None:
             loss = self.loss_fn(output, y[:, -self.pred_len:, :])
