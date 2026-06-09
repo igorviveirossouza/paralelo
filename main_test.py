@@ -112,6 +112,7 @@ def main():
     print(f"  Modelo: {args.model_name}")
     print(f"  Embedding: {args.embedding_type}")
     print(f"  RevIN: {args.revin}")
+    print(f"  RevIN affine: {args.revin_affine}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
@@ -175,7 +176,7 @@ def main():
         loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
-    model_to_print = model
+
     if args.revin:
         model = RevINModelWrapper(
             model=model,
@@ -183,7 +184,6 @@ def main():
             loss_name=args.loss_name,
             loss_kwargs=loss_kwargs,
             affine=args.revin_affine
-
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -205,7 +205,7 @@ def main():
 
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
     forecast_dir = run_one_step_rolling_forecast(
-        model=model_to_print,
+        model=model,
         dataset=test_dataset,
         output_dir=args.output_dir,
         dataset_name=args.base_de_dados,
