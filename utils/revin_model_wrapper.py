@@ -7,6 +7,7 @@ class RevINModelWrapper(nn.Module):
     def __init__(self, model, enc_in, loss_name='mse', loss_kwargs=None, affine=False):
         super().__init__()
         self.model = model
+        self.forecast_model_name = model.__class__.__name__
         self.revin = RevIN(enc_in, affine=affine)
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
