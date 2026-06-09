@@ -30,7 +30,7 @@ class AttentionSoloChannelIndependent(nn.Module):
     def __init__(self, lookback, pred_len, enc_in=1, d_model=32, n_heads=8,
                  dropout=0.1, loss_name='mse', loss_kwargs=None, embedding_kwargs=None,
                  use_all_timesteps=True, channel_specific_embedding=True,
-                 channel_specific_projection=True, revin=False):
+                 channel_specific_projection=True, revin=False, revin_affine=False):
         super().__init__()
         self.lookback = lookback
         self.pred_len = pred_len
@@ -39,7 +39,8 @@ class AttentionSoloChannelIndependent(nn.Module):
         self.use_all_timesteps = use_all_timesteps
         self.channel_specific_projection = channel_specific_projection
         self.revin_enabled = revin
-        self.revin = RevIN(enc_in) if revin else None
+        self.revin_affine = revin_affine
+        self.revin = RevIN(enc_in, affine=revin_affine) if revin else None
 
         self.embedding = ChannelIndependentTemporalEmbedding(
             c_in=enc_in,
