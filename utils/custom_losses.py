@@ -91,9 +91,9 @@ class DilateLoss(nn.Module):
             current_row = [huge_val.expand(batch_size)]
 
             for j in range(1, t + 1):
-                r0 = -rows[i - 1][:, j - 1] / self.gamma  # diagonal
-                r1 = -rows[i - 1][:, j] / self.gamma      # cima
-                r2 = -current_row[j - 1] / self.gamma     # esquerda
+                r0 = -rows[i - 1][:, j - 1] / self.gamma
+                r1 = -rows[i - 1][:, j] / self.gamma
+                r2 = -current_row[j - 1] / self.gamma
 
                 r = torch.stack([r0, r1, r2], dim=-1)
                 softmin = -self.gamma * torch.logsumexp(r, dim=-1)
@@ -117,34 +117,50 @@ class DilateLoss(nn.Module):
 
         t = pred.size(1)
 
-        # Matriz de custo entre previsão e alvo.
-        D = self._pairwise_distances(pred, target)  # [B, T, T]
-
-        # Termo de forma: Soft-DTW.
-        soft_dtw = self._soft_dtw(D)  # [B]
+        D = self._pairwise_distances(pred, target)
+        soft_dtw = self._soft_dtw(D)
         loss_shape = soft_dtw.mean()
 
-        # Matriz de alinhamento suave.
-        # Usar soft_dtw.sum() evita dividir o gradiente pelo batch size.
         alignment = torch.autograd.grad(
             soft_dtw.sum(),
             D,
             create_graph=True,
             retain_graph=True,
             only_inputs=True,
-        )[0]  # [B, T, T]
+        )[0]
 
-        # Matriz de penalização temporal Omega.
         idx = torch.arange(t, device=pred.device, dtype=pred.dtype)
-        omega = (idx[:, None] - idx[None, :]).pow(2)  # [T, T]
+        omega = (idx[:, None] - idx[None, :]).pow(2)
 
-        # Termo temporal da DILATE.
         loss_temporal = torch.sum(
             alignment * omega.unsqueeze(0),
             dim=(1, 2),
         ).mean() / (t * t)
 
         return self.alpha * loss_shape + (1.0 - self.alpha) * loss_temporal
+
+
+class MSEDilateLoss(nn.Module):
+    """
+    Loss mista:
+        theta * MSE + (1 - theta) * DILATE
+
+    onde:
+        DILATE = alpha * shape + (1 - alpha) * temporal
+    """
+
+    def __init__(self, theta=0.5, alpha=0.5, gamma=0.01):
+        super().__init__()
+
+        if not 0.0 <= theta <= 1.0:
+            raise ValueError("theta deve estar entre 0 e 1.")
+
+        self.theta = theta
+        self.mse = nn.MSELoss()
+        self.dilate = DilateLoss(alpha=alpha, gamma=gamma)
+
+    def forward(self, pred, target):
+        return self.theta * self.mse(pred, target) + (1.0 - self.theta) * self.dilate(pred, target)
 
 
 def _str2bool(value):
@@ -167,7 +183,7 @@ def add_loss_arguments(parser):
         dest="loss_name",
         type=str,
         default="mse",
-        choices=["mse", "mae", "dilate"],
+        choices=["mse", "mae", "dilate", "mse_dilate", "mixed_dilate", "dilate_mse"],
         help="Função de perda usada no treinamento.",
     )
     loss_group.add_argument(
@@ -186,6 +202,15 @@ def add_loss_arguments(parser):
         default=0.01,
         help="Parâmetro de suavização do Soft-DTW usado pela DILATE.",
     )
+    loss_group.add_argument(
+        "--mse_dilate_theta",
+        "--mse-dilate-theta",
+        "--theta",
+        dest="mse_dilate_theta",
+        type=float,
+        default=0.5,
+        help="Peso da MSE na loss mista: theta*MSE + (1-theta)*DILATE.",
+    )
     return parser
 
 
@@ -194,6 +219,7 @@ def get_loss_kwargs_from_args(args):
     return {
         "alpha": getattr(args, "dilate_alpha", 0.5),
         "gamma": getattr(args, "dilate_gamma", 0.01),
+        "theta": getattr(args, "mse_dilate_theta", 0.5),
     }
 
 
@@ -201,6 +227,12 @@ def get_loss(loss_name="mse", **loss_kwargs):
     loss_name = loss_name.lower()
     if loss_name == "dilate":
         return DilateLoss(
+            alpha=loss_kwargs.get("alpha", 0.5),
+            gamma=loss_kwargs.get("gamma", 0.01),
+        )
+    if loss_name in {"mse_dilate", "mixed_dilate", "dilate_mse"}:
+        return MSEDilateLoss(
+            theta=loss_kwargs.get("theta", 0.5),
             alpha=loss_kwargs.get("alpha", 0.5),
             gamma=loss_kwargs.get("gamma", 0.01),
         )
