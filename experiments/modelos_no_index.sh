@@ -9,8 +9,8 @@
 set -euo pipefail
 
 MODELOS=(
-    #"AttentionSoloChannelIndependent"
-    #"AttentionSoloChannelIndependentSharedSpecific"
+    "AttentionSoloChannelIndependent"
+    "AttentionSoloChannelIndependentSharedSpecific"
     "AttentionSoloChannelIndependentShrINSpec"
     "TransformerShrINSpec"
 )
@@ -18,16 +18,17 @@ MODELOS=(
 LOOKBACKS=(
     32
     104
-    246
-    369    
-    492
+    #246
+    #369    
+    #492
 )
 
 EPOCHS=(
     50
     100
     250
-    500
+    ##500
+    #1000
 )
 
 loss='mse'
@@ -61,7 +62,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
             EXPERIMENTO=(
                 #"teste_revin"
                 "$loss"
-                "revin"
+                "revin_affine"
                 "lookback_${L_LOOKBACK}"
                 "epochs_${N_EPOCHS}"
             )
@@ -87,6 +88,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
                 --model_name "$MODEL_NAME" \
                 --embedding_type "linear" \
                 --revin true\
+                --revin_affine true \
                 --embedding_lag_size 10 \
                 --loss "$loss" \
                 --dilate_alpha 0.3 \

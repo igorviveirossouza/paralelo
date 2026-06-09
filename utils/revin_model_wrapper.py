@@ -4,10 +4,10 @@ from utils.revin import RevIN
 
 
 class RevINModelWrapper(nn.Module):
-    def __init__(self, model, enc_in, loss_name='mse', loss_kwargs=None):
+    def __init__(self, model, enc_in, loss_name='mse', loss_kwargs=None,revin_kwargs=None):
         super().__init__()
         self.model = model
-        self.revin = RevIN(enc_in)
+        self.revin = RevIN(enc_in,**revin_kwargs)
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
     def forward(self, x, y=None, return_loss=False):

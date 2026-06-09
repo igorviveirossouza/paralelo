@@ -95,6 +95,7 @@ def main():
     parser.add_argument('--output_dir', type=str, default='previsoes')
     parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
     parser.add_argument('--revin', type=str2bool, default=False, help='Ativa RevIN: true/false')
+    parser.add_argument("--revin_affine", type=str2bool, default=False)
     parser.add_argument(
         '--model_name',
         type=str,
@@ -180,7 +181,9 @@ def main():
             model=model,
             enc_in=enc_in,
             loss_name=args.loss_name,
-            loss_kwargs=loss_kwargs
+            loss_kwargs=loss_kwargs,
+            affine=args.revin_affine
+
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
