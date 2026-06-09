@@ -8,6 +8,10 @@ class RevIN(nn.Module):
 
     Normaliza cada amostra e canal usando a dimensão temporal e permite
     reverter a escala antes do cálculo da loss.
+
+    Se affine=True, aplica uma transformação aprendível após a normalização:
+        x_affine = gamma * x_norm + beta
+    e remove essa transformação antes da desnormalização.
     """
     def __init__(self, num_features, eps=1e-5, affine=False):
         super().__init__()
@@ -42,7 +46,7 @@ class RevIN(nn.Module):
             if self._cached_mean is None or self._cached_std is None:
                 raise RuntimeError("RevIN denorm chamado antes de norm.")
             if self.affine:
-                x = (x - self.bias) / (self.weight + self.eps)
+                x = (x - self.bias) / self.weight
             return x * self._cached_std + self._cached_mean
 
         raise ValueError("mode deve ser 'norm' ou 'denorm'.")
