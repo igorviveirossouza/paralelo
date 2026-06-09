@@ -174,7 +174,7 @@ def main():
         loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
-
+    model_to_print = model
     if args.revin:
         model = RevINModelWrapper(
             model=model,
@@ -202,7 +202,7 @@ def main():
 
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
     forecast_dir = run_one_step_rolling_forecast(
-        model=model,
+        model=model_to_print,
         dataset=test_dataset,
         output_dir=args.output_dir,
         dataset_name=args.base_de_dados,

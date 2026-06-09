@@ -1,24 +1,25 @@
 #!/bin/bash
+# ~SBATCH -p gorgonas_dev
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --time=08:30:00
+#SBATCH --time=09:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
 set -euo pipefail
 
 MODELOS=(
-    "AttentionSoloChannelIndependent"
-    "AttentionSoloChannelIndependentSharedSpecific"
+    #"AttentionSoloChannelIndependent"
+    #"AttentionSoloChannelIndependentSharedSpecific"
     "AttentionSoloChannelIndependentShrINSpec"
     "TransformerShrINSpec"
 )
 
 LOOKBACKS=(
-    #32
-    #104
-    #369
-    #246
+    32
+    104
+    246
+    369    
     492
 )
 
@@ -58,7 +59,9 @@ for MODEL_NAME in "${MODELOS[@]}"; do
     for L_LOOKBACK in "${LOOKBACKS[@]}"; do 
         for N_EPOCHS in "${EPOCHS[@]}"; do
             EXPERIMENTO=(
+                #"teste_revin"
                 "$loss"
+                "revin"
                 "lookback_${L_LOOKBACK}"
                 "epochs_${N_EPOCHS}"
             )
@@ -83,6 +86,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
                 --extra_dirs "${EXPERIMENTO[@]}" \
                 --model_name "$MODEL_NAME" \
                 --embedding_type "linear" \
+                --revin true\
                 --embedding_lag_size 10 \
                 --loss "$loss" \
                 --dilate_alpha 0.3 \
