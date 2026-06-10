@@ -1,4 +1,3 @@
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -54,11 +53,23 @@ def run_one_step_rolling_forecast(
 
     with torch.no_grad():
         for idx in range(len(dataset)):
-            seq_x, _ = dataset[idx]
+            sample = dataset[idx]
+            if len(sample) == 2:
+                seq_x, _ = sample
+                seq_candle = None
+            elif len(sample) == 3:
+                seq_x, _, seq_candle = sample
+            else:
+                raise ValueError(f"Amostra inesperada com {len(sample)} elementos")
+
             global_start = dataset.indices[idx]
 
             batch_x = seq_x.unsqueeze(0).to(device)
-            pred = model(batch_x)
+            forward_kwargs = {}
+            if seq_candle is not None:
+                forward_kwargs["candle_x"] = seq_candle.unsqueeze(0).to(device)
+
+            pred = model(batch_x, **forward_kwargs)
             if isinstance(pred, tuple):
                 pred = pred[0]
             pred_np = pred.squeeze(0).cpu().numpy()
