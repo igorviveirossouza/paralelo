@@ -29,6 +29,7 @@ from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
 from utils.embeddings import add_embedding_arguments, get_embedding_kwargs_from_args
 from utils.revin_model_wrapper import RevINModelWrapper
+from utils.candle_fusion_wrapper import CandleFusionModelWrapper
 
 MODEL_REGISTRY = {
     "AttentionSoloNaive": AttentionSoloNaive,
@@ -51,6 +52,50 @@ def str2bool(value):
     if value in {"false", "0", "no", "n", "nao", "não"}:
         return False
     raise argparse.ArgumentTypeError("Valor booleano inválido.")
+
+
+def add_candle_arguments(parser):
+    candle_group = parser.add_argument_group("candle_encoder")
+    candle_group.add_argument(
+        "--use_candle_encoder",
+        type=str2bool,
+        default=False,
+        help="Ativa Candle Encoder Fusion: true/false.",
+    )
+    candle_group.add_argument(
+        "--candle_encoder_type",
+        type=str,
+        default="mlp",
+        choices=["linear", "mlp"],
+        help="Arquitetura do Candle Encoder.",
+    )
+    candle_group.add_argument(
+        "--candle_hidden_dim",
+        type=int,
+        default=64,
+        help="Dimensão oculta do Candle Encoder MLP.",
+    )
+    candle_group.add_argument(
+        "--candle_dropout",
+        type=float,
+        default=0.1,
+        help="Dropout do Candle Encoder.",
+    )
+    candle_group.add_argument(
+        "--candle_feature_mode",
+        type=str,
+        default="ohlcv_relative",
+        choices=["ohlcv_relative", "raw"],
+        help="Como preparar OHLCV antes do encoder.",
+    )
+    candle_group.add_argument(
+        "--candle_cols",
+        type=str,
+        nargs="*",
+        default=None,
+        help="Colunas usadas no modo raw. Default: abertura maxima minima data volume.",
+    )
+    return parser
 
 
 def salvar_relatorio_loss_treino(train_losses, output_dir):
@@ -105,6 +150,7 @@ def main():
     )
     add_loss_arguments(parser)
     add_embedding_arguments(parser)
+    add_candle_arguments(parser)
     args = parser.parse_args()
 
     print(f"Configuração:")
@@ -113,6 +159,10 @@ def main():
     print(f"  Embedding: {args.embedding_type}")
     print(f"  RevIN: {args.revin}")
     print(f"  RevIN affine: {args.revin_affine}")
+    print(f"  Candle Encoder Fusion: {args.use_candle_encoder}")
+    if args.use_candle_encoder:
+        print(f"  Candle Encoder type: {args.candle_encoder_type}")
+        print(f"  Candle feature mode: {args.candle_feature_mode}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
@@ -139,32 +189,40 @@ def main():
             f"Procurei em:\n" + "\n".join(possible_paths)
         )
 
-    train_dataset = TimeSeriesDataset(
+    dataset_kwargs = dict(
         data_path=data_path,
         lookback=args.lookback,
         pred_len=args.pred_len,
         stride=1,
         cols=args.cols,
+        test_ratio=args.test_ratio,
+        use_candle_encoder=args.use_candle_encoder,
+        candle_cols=args.candle_cols,
+        candle_feature_mode=args.candle_feature_mode,
+    )
+
+    train_dataset = TimeSeriesDataset(
         train=True,
-        test_ratio=args.test_ratio
+        **dataset_kwargs,
     )
 
     test_dataset = TimeSeriesDataset(
-        data_path=data_path,
-        lookback=args.lookback,
-        pred_len=args.pred_len,
-        stride=1,
-        cols=args.cols,
         train=False,
-        test_ratio=args.test_ratio
+        **dataset_kwargs,
     )
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     print(f"\nDataLoader de treino criado com {len(train_loader)} batches\n")
 
-    sample_x, _ = train_dataset[0]
+    sample = train_dataset[0]
+    sample_x = sample[0]
     enc_in = sample_x.shape[1]
     print(f"Features detectadas: {enc_in}")
+
+    candle_input_dim = None
+    if args.use_candle_encoder:
+        candle_input_dim = len(train_dataset.candle_feature_names)
+        print(f"Features do candle detectadas: {candle_input_dim} | {train_dataset.candle_feature_names}")
 
     loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
@@ -176,6 +234,18 @@ def main():
         loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
+
+    if args.use_candle_encoder:
+        model = CandleFusionModelWrapper(
+            model=model,
+            d_model=getattr(model, "d_model", 32),
+            candle_input_dim=candle_input_dim,
+            candle_encoder_type=args.candle_encoder_type,
+            candle_hidden_dim=args.candle_hidden_dim,
+            candle_dropout=args.candle_dropout,
+            loss_name=args.loss_name,
+            loss_kwargs=loss_kwargs,
+        )
 
     if args.revin:
         model = RevINModelWrapper(
