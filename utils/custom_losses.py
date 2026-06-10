@@ -183,7 +183,7 @@ def add_loss_arguments(parser):
         dest="loss_name",
         type=str,
         default="mse",
-        choices=["mse", "mae", "dilate", "mse_dilate", "mixed_dilate", "dilate_mse"],
+        choices=["mse", "mae", "dilate", "mse_dilate"],
         help="Função de perda usada no treinamento.",
     )
     loss_group.add_argument(
@@ -230,7 +230,7 @@ def get_loss(loss_name="mse", **loss_kwargs):
             alpha=loss_kwargs.get("alpha", 0.5),
             gamma=loss_kwargs.get("gamma", 0.01),
         )
-    if loss_name in {"mse_dilate", "mixed_dilate", "dilate_mse"}:
+    if loss_name in "mse_dilate":
         return MSEDilateLoss(
             theta=loss_kwargs.get("theta", 0.5),
             alpha=loss_kwargs.get("alpha", 0.5),

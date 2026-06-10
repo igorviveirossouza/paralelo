@@ -1,8 +1,8 @@
 #!/bin/bash
-# ~SBATCH -p gorgonas_dev
+#~SBATCH -p gorgonas_dev
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --time=09:30:00
+#SBATCH --time=27:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
@@ -17,7 +17,7 @@ MODELOS=(
 
 LOOKBACKS=(
     32
-    104
+    #104
     #246
     #369    
     #492
@@ -31,7 +31,7 @@ EPOCHS=(
     #1000
 )
 
-loss='mse'
+loss='mse_dilate'
 
 echo "=== Job iniciado em $(date) ==="
 START_TIME=$(date +%s)
@@ -60,8 +60,9 @@ for MODEL_NAME in "${MODELOS[@]}"; do
     for L_LOOKBACK in "${LOOKBACKS[@]}"; do 
         for N_EPOCHS in "${EPOCHS[@]}"; do
             EXPERIMENTO=(
-                #"teste_revin"
+                #"teste_mse_dilate"
                 "$loss"
+                "theta_05-alpha_0.3-gamma_0.001"
                 "revin_affine"
                 "lookback_${L_LOOKBACK}"
                 "epochs_${N_EPOCHS}"
@@ -92,7 +93,9 @@ for MODEL_NAME in "${MODELOS[@]}"; do
                 --embedding_lag_size 10 \
                 --loss "$loss" \
                 --dilate_alpha 0.3 \
-                --dilate_gamma 0.001
+                --dilate_gamma 0.001 \
+                --mse-dilate-theta 0.5 \
+
 
             RUN_END=$(date +%s)
             RUN_ELAPSED=$((RUN_END - RUN_START))
