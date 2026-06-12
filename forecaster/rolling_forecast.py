@@ -13,6 +13,18 @@ def _sanitize_path_part(value):
     return value or "sem_nome"
 
 
+def _resolve_model_name(model):
+    """Recupera o nome do modelo base, ignorando wrappers."""
+    if hasattr(model, "base_model_name"):
+        return model.base_model_name
+
+    inner_model = getattr(model, "model", None)
+    if inner_model is not None:
+        return _resolve_model_name(inner_model)
+
+    return getattr(model, "forecast_model_name", model.__class__.__name__)
+
+
 def run_one_step_rolling_forecast(
     model,
     dataset,
@@ -21,17 +33,17 @@ def run_one_step_rolling_forecast(
     dataset_name=None,
     run_date=None,
     extra_dirs=None,
+    model_name=None,
 ):
     """
     Rolling forecast SOMENTE PREVISÕES (sem valores true).
     'step' reflete posição real na série original.
 
     Salva os arquivos em:
-    output_dir/dataset_name/model_class_name/run_date/janela_*.csv
-    Ex.: previsoes/b3_daily_financeiro/AttentionSolo/2026-05-27/
+    output_dir/dataset_name/model_class_name/janela_*.csv
     """
     dataset_name = dataset_name or getattr(dataset, "dataset_name", None) or "dataset"
-    model_name = getattr(model, "forecast_model_name", model.__class__.__name__)
+    model_name = model_name or _resolve_model_name(model)
     run_date = run_date or datetime.now().strftime("%Y-%m-%d")
 
     extra_dirs = extra_dirs or []
