@@ -79,7 +79,8 @@ class CandleFusionModelWrapper(nn.Module):
             raise ValueError("O modelo precisa possuir atributo .embedding para usar CandleFusionModelWrapper.")
 
         self.model = model
-        self.forecast_model_name = f"{model.__class__.__name__}CandleFusion"
+        self.base_model_name = getattr(model, "base_model_name", getattr(model, "forecast_model_name", model.__class__.__name__))
+        self.forecast_model_name = self.base_model_name
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
         self.model.embedding = CandleEmbeddingWrapper(
             base_embedding=model.embedding,
