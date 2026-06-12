@@ -235,7 +235,7 @@ def main():
         loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
-    model_name = model
+
     if args.use_candle_encoder:
         model = CandleFusionModelWrapper(
             model=model,
@@ -260,6 +260,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     print(f"Modelo carregado: {model.__class__.__name__}")
+    print(f"Modelo de forecast: {getattr(model, 'forecast_model_name', model.__class__.__name__)}")
     print(f"Modelo carregado no device: {device}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -276,7 +277,7 @@ def main():
 
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
     forecast_dir = run_one_step_rolling_forecast(
-        model=model_name,
+        model=model,
         dataset=test_dataset,
         output_dir=args.output_dir,
         dataset_name=args.base_de_dados,
