@@ -281,7 +281,8 @@ def main():
         dataset=test_dataset,
         output_dir=args.output_dir,
         dataset_name=args.base_de_dados,
-        extra_dirs=args.extra_dirs
+        extra_dirs=args.extra_dirs,
+        model_name=args.model_name,
     )
 
     loss_csv, loss_png = salvar_relatorio_loss_treino(train_losses, forecast_dir)
