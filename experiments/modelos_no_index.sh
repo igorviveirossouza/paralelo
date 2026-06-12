@@ -2,7 +2,7 @@
 #~SBATCH -p gorgonas_dev
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --time=27:30:00
+#SBATCH --time=20:30:00
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tioms-%j.err
 
@@ -17,8 +17,8 @@ MODELOS=(
 
 LOOKBACKS=(
     32
-    #104
-    #246
+    104
+    246
     #369    
     #492
 )
@@ -31,7 +31,7 @@ EPOCHS=(
     #1000
 )
 
-loss='mse_dilate'
+loss='mse'
 
 echo "=== Job iniciado em $(date) ==="
 START_TIME=$(date +%s)
@@ -80,7 +80,10 @@ for MODEL_NAME in "${MODELOS[@]}"; do
             RUN_START=$(date +%s)
 
             "$PYTHON_BIN" ./main_test.py \
-                --base_de_dados b3_daily_financeiro_indice.csv \
+                --base_de_dados b3_daily_financeiro_ohlcv.csv \
+                --use_candle_encoder true \
+                --candle_feature_mode raw \
+                --candle_cols abertura maxima minima data volume \
                 --lookback "$L_LOOKBACK" \
                 --pred_len 24 \
                 --batch_size 16 \
@@ -95,6 +98,8 @@ for MODEL_NAME in "${MODELOS[@]}"; do
                 --dilate_alpha 0.3 \
                 --dilate_gamma 0.001 \
                 --mse-dilate-theta 0.5 \
+
+
 
 
             RUN_END=$(date +%s)

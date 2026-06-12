@@ -226,6 +226,7 @@ def main():
 
     loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
+
     model = model_class(
         lookback=args.lookback,
         pred_len=args.pred_len,
@@ -234,7 +235,7 @@ def main():
         loss_kwargs=loss_kwargs,
         embedding_kwargs=get_embedding_kwargs_from_args(args)
     )
-
+    model_name = model
     if args.use_candle_encoder:
         model = CandleFusionModelWrapper(
             model=model,
@@ -275,7 +276,7 @@ def main():
 
     print("\nIniciando Rolling Forecast no conjunto de TESTE (fora da amostra)...")
     forecast_dir = run_one_step_rolling_forecast(
-        model=model,
+        model=model_name,
         dataset=test_dataset,
         output_dir=args.output_dir,
         dataset_name=args.base_de_dados,
