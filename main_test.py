@@ -24,6 +24,7 @@ from models.attention_solo_channel_independent_sharedINspecific import Attention
 from models.transformer import TransformerChannelIndependent
 from models.transformer_shared_specific import TransformerChannelIndependentSharedSpecific
 from models.transformer_sharedINspecific import TransformerChannelIndependentSharedINSpecific
+from models.timexer_ohlcv import TimeXerOHLCV
 from trainer.training_loop import Trainer
 from forecaster.rolling_forecast import run_one_step_rolling_forecast
 from utils.custom_losses import add_loss_arguments, get_loss_kwargs_from_args
@@ -40,7 +41,10 @@ MODEL_REGISTRY = {
     "Transformer": TransformerChannelIndependent,
     "TransformerSpecific": TransformerChannelIndependentSharedSpecific,
     "TransformerShrINSpec": TransformerChannelIndependentSharedINSpecific,
+    "TimeXerOHLCV": TimeXerOHLCV,
 }
+
+EXOGENOUS_MODEL_NAMES = {"TimeXerOHLCV"}
 
 
 def str2bool(value):
@@ -60,14 +64,14 @@ def add_candle_arguments(parser):
         "--use_candle_encoder",
         type=str2bool,
         default=False,
-        help="Ativa Candle Encoder Fusion: true/false.",
+        help="Ativa Candle Encoder Fusion nos modelos usuais. Modelos exógenos usam OHLCV diretamente.",
     )
     candle_group.add_argument(
         "--candle_encoder_type",
         type=str,
         default="mlp",
         choices=["linear", "mlp"],
-        help="Arquitetura do Candle Encoder.",
+        help="Arquitetura do Candle Encoder Fusion.",
     )
     candle_group.add_argument(
         "--candle_hidden_dim",
@@ -86,7 +90,7 @@ def add_candle_arguments(parser):
         type=str,
         default="ohlcv_relative",
         choices=["ohlcv_relative", "raw"],
-        help="Como preparar OHLCV antes do encoder.",
+        help="Como preparar OHLCV antes do encoder/modelo exógeno.",
     )
     candle_group.add_argument(
         "--candle_cols",
@@ -94,6 +98,35 @@ def add_candle_arguments(parser):
         nargs="*",
         default=None,
         help="Colunas usadas no modo raw. Default: abertura maxima minima data volume.",
+    )
+    return parser
+
+
+def add_timexer_arguments(parser):
+    timexer_group = parser.add_argument_group("timexer_ohlcv")
+    timexer_group.add_argument(
+        "--timexer_patch_len",
+        type=int,
+        default=16,
+        help="Tamanho do patch temporal endógeno no TimeXerOHLCV.",
+    )
+    timexer_group.add_argument(
+        "--timexer_patch_stride",
+        type=int,
+        default=None,
+        help="Stride dos patches temporais. Default: igual ao patch_len.",
+    )
+    timexer_group.add_argument(
+        "--timexer_num_layers",
+        type=int,
+        default=1,
+        help="Número de camadas Transformer endógenas no TimeXerOHLCV.",
+    )
+    timexer_group.add_argument(
+        "--timexer_dim_feedforward",
+        type=int,
+        default=None,
+        help="Dimensão feedforward do TimeXerOHLCV. Default: 4*d_model.",
     )
     return parser
 
@@ -151,7 +184,12 @@ def main():
     add_loss_arguments(parser)
     add_embedding_arguments(parser)
     add_candle_arguments(parser)
+    add_timexer_arguments(parser)
     args = parser.parse_args()
+
+    uses_exogenous_ohlcv = args.model_name in EXOGENOUS_MODEL_NAMES
+    dataset_uses_candle = args.use_candle_encoder or uses_exogenous_ohlcv
+    apply_candle_fusion = args.use_candle_encoder and not uses_exogenous_ohlcv
 
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
@@ -159,10 +197,12 @@ def main():
     print(f"  Embedding: {args.embedding_type}")
     print(f"  RevIN: {args.revin}")
     print(f"  RevIN affine: {args.revin_affine}")
-    print(f"  Candle Encoder Fusion: {args.use_candle_encoder}")
-    if args.use_candle_encoder:
-        print(f"  Candle Encoder type: {args.candle_encoder_type}")
+    print(f"  Candle Encoder Fusion: {apply_candle_fusion}")
+    print(f"  OHLCV exógeno direto: {uses_exogenous_ohlcv}")
+    if dataset_uses_candle:
         print(f"  Candle feature mode: {args.candle_feature_mode}")
+        if apply_candle_fusion:
+            print(f"  Candle Encoder type: {args.candle_encoder_type}")
     print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
@@ -196,7 +236,7 @@ def main():
         stride=1,
         cols=args.cols,
         test_ratio=args.test_ratio,
-        use_candle_encoder=args.use_candle_encoder,
+        use_candle_encoder=dataset_uses_candle,
         candle_cols=args.candle_cols,
         candle_feature_mode=args.candle_feature_mode,
     )
@@ -220,23 +260,34 @@ def main():
     print(f"Features detectadas: {enc_in}")
 
     candle_input_dim = None
-    if args.use_candle_encoder:
+    if dataset_uses_candle:
         candle_input_dim = len(train_dataset.candle_feature_names)
         print(f"Features do candle detectadas: {candle_input_dim} | {train_dataset.candle_feature_names}")
 
     loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
 
-    model = model_class(
+    model_kwargs = dict(
         lookback=args.lookback,
         pred_len=args.pred_len,
         enc_in=enc_in,
         loss_name=args.loss_name,
         loss_kwargs=loss_kwargs,
-        embedding_kwargs=get_embedding_kwargs_from_args(args)
+        embedding_kwargs=get_embedding_kwargs_from_args(args),
     )
 
-    if args.use_candle_encoder:
+    if uses_exogenous_ohlcv:
+        model_kwargs.update(
+            candle_input_dim=candle_input_dim,
+            patch_len=args.timexer_patch_len,
+            patch_stride=args.timexer_patch_stride,
+            num_layers=args.timexer_num_layers,
+            dim_feedforward=args.timexer_dim_feedforward,
+        )
+
+    model = model_class(**model_kwargs)
+
+    if apply_candle_fusion:
         model = CandleFusionModelWrapper(
             model=model,
             d_model=getattr(model, "d_model", 32),
