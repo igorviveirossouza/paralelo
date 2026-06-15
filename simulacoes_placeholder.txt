@@ -1,1 +1,1 @@
-Pasta simulacoes: destino padrão dos resultados de backtest.
+Arquivo marcador. A pasta `simulacoes/` é criada automaticamente por `estrategias/ranking_backtest.py` ao executar uma simulação.
