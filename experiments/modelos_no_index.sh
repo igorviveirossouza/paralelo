@@ -9,16 +9,17 @@
 set -euo pipefail
 
 MODELOS=(
-    "AttentionSoloChannelIndependent"
-    "AttentionSoloChannelIndependentSharedSpecific"
-    "AttentionSoloChannelIndependentShrINSpec"
-    "TransformerShrINSpec"
+    #"AttentionSoloChannelIndependent"
+    #"AttentionSoloChannelIndependentSharedSpecific"
+    #"AttentionSoloChannelIndependentShrINSpec"
+    #"TransformerShrINSpec"
+    TimeXerOHLCV
 )
 
 LOOKBACKS=(
     32
     104
-    246
+    #246
     #369    
     #492
 )
@@ -26,7 +27,7 @@ LOOKBACKS=(
 EPOCHS=(
     50
     100
-    250
+    #250
     ##500
     #1000
 )
@@ -60,10 +61,8 @@ for MODEL_NAME in "${MODELOS[@]}"; do
     for L_LOOKBACK in "${LOOKBACKS[@]}"; do 
         for N_EPOCHS in "${EPOCHS[@]}"; do
             EXPERIMENTO=(
-                #"teste_mse_dilate"
-                "$loss"
-                "theta_05-alpha_0.3-gamma_0.001"
-                "revin_affine"
+                "COMPARACAO"
+                #"$loss"
                 "lookback_${L_LOOKBACK}"
                 "epochs_${N_EPOCHS}"
             )
@@ -82,7 +81,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
             "$PYTHON_BIN" ./main_test.py \
                 --base_de_dados b3_daily_financeiro_ohlcv.csv \
                 --use_candle_encoder true \
-                --candle_feature_mode raw \
+                --candle_feature_mode ohlcv_relative \
                 --candle_cols abertura maxima minima data volume \
                 --lookback "$L_LOOKBACK" \
                 --pred_len 24 \
@@ -98,8 +97,6 @@ for MODEL_NAME in "${MODELOS[@]}"; do
                 --dilate_alpha 0.3 \
                 --dilate_gamma 0.001 \
                 --mse-dilate-theta 0.5 \
-
-
 
 
             RUN_END=$(date +%s)
@@ -122,7 +119,14 @@ done
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
+# CORREÇÃO: Adicionado $(()) para o cálculo
+DIAS=$((ELAPSED / 86400))
+
+# CORREÇÃO: Simplificação dos parênteses para evitar erros de sintaxe
+HORAS=$(( (ELAPSED % 86400) / 3600 ))
+MINUTOS=$(( (ELAPSED % 3600) / 60 ))
+SEGUNDOS=$(( ELAPSED % 60 ))
+
 echo ""
 echo "=== Job finalizado em $(date) ==="
-echo "Tempo total: $((ELAPSED / 60)) min $((ELAPSED % 60)) s"
-
+echo "Tempo total: ${DIAS} dias, ${HORAS} horas, ${MINUTOS} min e ${SEGUNDOS} s"
