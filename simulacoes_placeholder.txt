@@ -1,1 +1,0 @@
-Arquivo marcador. A pasta `simulacoes/` é criada automaticamente por `estrategias/ranking_backtest.py` ao executar uma simulação.
