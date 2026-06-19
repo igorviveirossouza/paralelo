@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb/bolsa/returns/DUET/lookback_32",
+    "price_path": "../src/TFB/dataset/forecasting/b3_daily_tfb.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 1.5419509428942346,
+    "annual_return": 0.5369451357676449,
+    "annual_vol": 0.20244043312267057,
+    "sharpe": 2.439952968626255,
+    "max_drawdown": -0.08230512673565238,
+    "mean_precision_positive": 0.5095796697716258,
+    "mean_spearman_ic": 0.041596791690659184,
+    "icir": 0.19740103256955485,
+    "mean_n_assets": 8.974405850091408,
+    "n_periods": 547
+  }
+}

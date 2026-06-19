@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/b3_daily_financeiro_ohlcv/TimeXerOHLCV/COMPARACAO/lookback_104/epochs_50",
+    "price_path": "data/b3_daily_financeiro.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.4541513374391075,
+    "annual_return": 0.18864067567955112,
+    "annual_vol": 0.17090502773665697,
+    "sharpe": 0.8521731490776561,
+    "max_drawdown": -0.17189317534506288,
+    "mean_precision_positive": 0.5054945054945055,
+    "mean_spearman_ic": 0.008814654133204852,
+    "icir": 0.02237656633315858,
+    "mean_n_assets": 9.0,
+    "n_periods": 546
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb/financeiro/lookback_104/Nonstationary_Transformer",
+    "price_path": "data/b3_daily_financeiro.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.43539414710188473,
+    "annual_return": 0.1811791881698097,
+    "annual_vol": 0.17099935869320187,
+    "sharpe": 0.8080684584187454,
+    "max_drawdown": -0.17189317534506254,
+    "mean_precision_positive": 0.5047735120861263,
+    "mean_spearman_ic": 0.0122066215184659,
+    "icir": 0.03086824342277517,
+    "mean_n_assets": 9.0,
+    "n_periods": 547
+  }
+}

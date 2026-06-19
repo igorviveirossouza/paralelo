@@ -12,8 +12,8 @@ MODELOS=(
     #"AttentionSoloChannelIndependent"
     #"AttentionSoloChannelIndependentSharedSpecific"
     #"AttentionSoloChannelIndependentShrINSpec"
-    #"TransformerShrINSpec"
-    TimeXerOHLCV
+    "TransformerShrINSpec"
+    #TimeXerOHLCV
 )
 
 LOOKBACKS=(
@@ -61,7 +61,7 @@ for MODEL_NAME in "${MODELOS[@]}"; do
     for L_LOOKBACK in "${LOOKBACKS[@]}"; do 
         for N_EPOCHS in "${EPOCHS[@]}"; do
             EXPERIMENTO=(
-                "COMPARACAO"
+                "RETORNO"
                 #"$loss"
                 "lookback_${L_LOOKBACK}"
                 "epochs_${N_EPOCHS}"
@@ -79,8 +79,8 @@ for MODEL_NAME in "${MODELOS[@]}"; do
             RUN_START=$(date +%s)
 
             "$PYTHON_BIN" ./main_test.py \
-                --base_de_dados b3_daily_financeiro_ohlcv.csv \
-                --use_candle_encoder true \
+                --base_de_dados b3_daily_return_financeiro.csv \
+                --use_candle_encoder false \
                 --candle_feature_mode ohlcv_relative \
                 --candle_cols abertura maxima minima data volume \
                 --lookback "$L_LOOKBACK" \

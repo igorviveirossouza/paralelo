@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb/retornos_financeiro/DUET/lookback_32",
+    "price_path": "data/b3_daily_financeiro.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.38097759789226826,
+    "annual_return": 0.16033458983895033,
+    "annual_vol": 0.16138087951907182,
+    "sharpe": 0.7270662434646346,
+    "max_drawdown": -0.1785996582270616,
+    "mean_precision_positive": 0.5027762215997511,
+    "mean_spearman_ic": -0.0025198961366849682,
+    "icir": -0.006205360559468997,
+    "mean_n_assets": 4.608775137111517,
+    "n_periods": 547
+  }
+}
