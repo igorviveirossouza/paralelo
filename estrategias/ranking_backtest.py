@@ -9,11 +9,36 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_EXCLUDE_COLUMNS = {"step", "date", "data", "cols", "h", "horizon", "janela", "window"}
+DEFAULT_EXCLUDE_COLUMNS = {
+    "step",
+    "date",
+    "data",
+    "cols",
+    "h",
+    "horizon",
+    "janela",
+    "window",
+    "origin_step",
+    "target_step",
+    "origin_pos",
+    "target_pos",
+}
 
 
 def _read_csv(path: str | Path) -> pd.DataFrame:
     return pd.read_csv(path).loc[:, lambda df: ~df.columns.str.startswith("Unnamed")]
+
+
+def _origin_step_from_window(wide: pd.DataFrame, steps: pd.Series) -> int:
+    """Usa a origem salva pelo rolling forecast; cai no cálculo antigo se não existir."""
+    if "origin_step" not in wide.columns:
+        return int(steps.min()) - 1
+
+    origin_steps = pd.to_numeric(wide["origin_step"], errors="raise").astype(int)
+    unique_origins = origin_steps.dropna().unique()
+    if len(unique_origins) != 1:
+        raise ValueError("Coluna 'origin_step' deve ser constante dentro de cada janela.")
+    return int(unique_origins[0])
 
 
 def load_prediction_windows(
@@ -26,9 +51,10 @@ def load_prediction_windows(
     """Carrega previsões no formato h x papel.
 
     Cada arquivo deve representar uma janela de previsão. As linhas são os horizontes
-    futuros e as colunas são os papéis. A coluna ``step`` deve indicar o índice/data
-    do alvo previsto em cada horizonte. Assim, a data de origem da previsão é
-    ``min(step) - 1``.
+    futuros e as colunas são os papéis. A coluna ``step`` deve indicar o rótulo real
+    do alvo previsto em cada horizonte, compatível com ``date`` na base de preços.
+    Se a coluna ``origin_step`` existir, ela será usada como data de origem da
+    previsão. Caso contrário, mantém o comportamento antigo: ``min(step) - 1``.
     """
     pred_dir = Path(pred_dir)
     files = sorted(pred_dir.glob(file_glob))
@@ -45,7 +71,7 @@ def load_prediction_windows(
             wide = wide.iloc[:horizon].copy()
 
         steps = pd.to_numeric(wide[step_col], errors="raise").astype(int)
-        origin_step = int(steps.min()) - 1
+        origin_step = _origin_step_from_window(wide, steps)
 
         asset_cols = [c for c in wide.columns if c not in DEFAULT_EXCLUDE_COLUMNS]
         if not asset_cols:

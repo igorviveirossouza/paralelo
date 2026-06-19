@@ -32,6 +32,7 @@ class TimeSeriesDataset(Dataset):
         self.candle_feature_mode = candle_feature_mode
         self.candle_feature_names = []
         self.candle_data = None
+        self.date_index = []
 
         df = pd.read_csv(data_path)
         print("Colunas originais:", df.columns.tolist())
@@ -47,6 +48,7 @@ class TimeSeriesDataset(Dataset):
 
         df_pivot = df.pivot(index="date", columns="cols", values="data")
         df_pivot = df_pivot.ffill().bfill().fillna(0.0)
+        self.date_index = df_pivot.index.tolist()
 
         candle_np = None
         if use_candle_encoder:

@@ -25,6 +25,19 @@ def _resolve_model_name(model):
     return getattr(model, "forecast_model_name", model.__class__.__name__)
 
 
+def _resolve_temporal_labels(dataset, target_positions, origin_pos):
+    """Mapeia posições internas para os rótulos reais da coluna date."""
+    date_index = getattr(dataset, "date_index", None)
+    max_pos = max([origin_pos, *target_positions]) if target_positions else origin_pos
+
+    if date_index is None or len(date_index) <= max_pos:
+        return origin_pos, target_positions
+
+    origin_step = date_index[origin_pos]
+    target_steps = [date_index[pos] for pos in target_positions]
+    return origin_step, target_steps
+
+
 def run_one_step_rolling_forecast(
     model,
     dataset,
@@ -37,7 +50,8 @@ def run_one_step_rolling_forecast(
 ):
     """
     Rolling forecast SOMENTE PREVISÕES (sem valores true).
-    'step' reflete posição real na série original.
+    A coluna ``step`` reflete o rótulo real da coluna date, quando disponível.
+    As colunas ``target_pos`` e ``origin_pos`` preservam a posição interna no array.
 
     Salva os arquivos em:
     output_dir/dataset_name/model_class_name/janela_*.csv
@@ -87,8 +101,15 @@ def run_one_step_rolling_forecast(
 
             pred_df = pd.DataFrame(pred_np, columns=dataset.feature_columns)
 
-            real_start_step = global_start + dataset.lookback
-            pred_df["step"] = range(real_start_step, real_start_step + len(pred_df))
+            target_pos = list(range(global_start + dataset.lookback, global_start + dataset.lookback + len(pred_df)))
+            origin_pos = global_start + dataset.lookback - 1
+            origin_step, target_steps = _resolve_temporal_labels(dataset, target_pos, origin_pos)
+
+            # Backward compatibility: ranking_backtest lê ``step`` como alvo previsto.
+            pred_df["step"] = target_steps
+            pred_df["origin_step"] = origin_step
+            pred_df["target_pos"] = target_pos
+            pred_df["origin_pos"] = origin_pos
 
             out_file = final_output_dir / f"janela_{idx:06d}.csv"
             pred_df.to_csv(out_file, index=False)
