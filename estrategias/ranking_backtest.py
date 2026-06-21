@@ -46,7 +46,7 @@ def load_prediction_windows(
     *,
     step_col: str = "step",
     horizon: int | None = None,
-    file_glob: str = "*.csv",
+    file_glob: str = "janela_*.csv",
 ) -> pd.DataFrame:
     """Carrega previsões no formato h x papel.
 
