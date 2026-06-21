@@ -11,7 +11,7 @@ set -euo pipefail
 MODELOS=(
     #"AttentionSoloChannelIndependent"
     #"AttentionSoloChannelIndependentSharedSpecific"
-    #"AttentionSoloChannelIndependentShrINSpec"
+    "AttentionSoloChannelIndependentShrINSpec"
     "TransformerShrINSpec"
     #TimeXerOHLCV
 )
@@ -25,7 +25,7 @@ LOOKBACKS=(
 )
 
 EPOCHS=(
-    50
+    #50
     100
     #250
     ##500
@@ -61,9 +61,10 @@ for MODEL_NAME in "${MODELOS[@]}"; do
     for L_LOOKBACK in "${LOOKBACKS[@]}"; do 
         for N_EPOCHS in "${EPOCHS[@]}"; do
             EXPERIMENTO=(
-                "RETORNO"
+                "PRICES"
                 #"$loss"
                 "lookback_${L_LOOKBACK}"
+                "pred_len_01"
                 "epochs_${N_EPOCHS}"
             )
 
@@ -79,13 +80,13 @@ for MODEL_NAME in "${MODELOS[@]}"; do
             RUN_START=$(date +%s)
 
             "$PYTHON_BIN" ./main_test.py \
-                --base_de_dados b3_daily_return_financeiro.csv \
+                --base_de_dados b3_daily_financeiro.csv \
                 --use_candle_encoder false \
                 --candle_feature_mode ohlcv_relative \
                 --candle_cols abertura maxima minima data volume \
                 --lookback "$L_LOOKBACK" \
-                --pred_len 24 \
-                --batch_size 16 \
+                --pred_len 1 \
+                --batch_size 32 \
                 --epochs "$N_EPOCHS" \
                 --extra_dirs "${EXPERIMENTO[@]}" \
                 --model_name "$MODEL_NAME" \
