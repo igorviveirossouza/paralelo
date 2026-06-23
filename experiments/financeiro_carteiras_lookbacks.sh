@@ -1,7 +1,19 @@
 #!/bin/bash
+#SBATCH -p medusas_shr
+#SBATCH --gres=gpu:1
+#SBATCH --time=48:00:00
+#SBATCH --job-name=fin_cart
+#SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/fin-cart-%j.out
+#SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/fin-cart-%j.err
+
 set -euo pipefail
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
+cd /sonic_home/igor.viveiros/paralelo
+
+source /sonic_home/igor.viveiros/py310/bin/activate
+PYTHON_BIN=/sonic_home/igor.viveiros/py310/bin/python
+
+mkdir -p logs
 
 EPOCHS="${EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
@@ -15,11 +27,14 @@ PRED_LEN=20
 
 MODELOS=(
   "AttentionSoloChannelIndependent"
+  "AttentionSoloChannelIndependentSharedSpecific"
+  "AttentionSoloChannelIndependentShrINSpec"
+  "TransformerSpecific"
   "TransformerShrINSpec"
 )
 
 LOOKBACKS=(32 104 246)
-JANELAS_PREVISAO=(1 5 10 15 20)
+JANELAS_PREVISAO=(24 36 48)
 
 # tipo_saida:arquivo_dataset:model_output
 DATASETS=(
@@ -34,12 +49,14 @@ PRICE_DATASET="b3_daily_financeiro.csv"
 
 resolve_data_path() {
   local fname="$1"
+
   for p in "$fname" "data/$fname" "attachments/$fname"; do
     if [[ -f "$p" ]]; then
       echo "$p"
       return 0
     fi
   done
+
   echo "ERRO: arquivo não encontrado: $fname" >&2
   exit 1
 }
@@ -57,7 +74,9 @@ copy_predictions_to_target() {
     exit 1
   fi
 
+  rm -rf "$target_dir"
   mkdir -p "$target_dir"
+
   cp -f "$raw_dir"/janela_*.csv "$target_dir"/
   cp -f "$raw_dir"/train_loss.csv "$target_dir"/ 2>/dev/null || true
   cp -f "$raw_dir"/train_loss.png "$target_dir"/ 2>/dev/null || true
@@ -67,20 +86,27 @@ prepare_backtest_pred_dir() {
   local pred_dir="$1"
   local bt_dir="$pred_dir/_backtest_janelas_only"
 
+  rm -rf "$bt_dir"
   mkdir -p "$bt_dir"
+
   cp -f "$pred_dir"/janela_*.csv "$bt_dir"/
+
   echo "$bt_dir"
 }
 
 PRICE_PATH="$(resolve_data_path "$PRICE_DATASET")"
+
 mkdir -p "$PRED_ROOT" "$RAW_PRED_ROOT" "$SIM_ROOT"
 
 echo "=== Experimento iniciado em $(date) ==="
+echo "Python: $PYTHON_BIN"
+echo "Preço realizado para backtest: $PRICE_PATH"
 echo "Previsões em: $PRED_ROOT/{prices,retornos}"
 echo "Simulações em: $SIM_ROOT/{prices,retornos}"
 
 for dataset_spec in "${DATASETS[@]}"; do
   IFS=":" read -r TIPO_SERIE DATASET_FILE MODEL_OUTPUT <<< "$dataset_spec"
+
   DATASET_STEM="$(stem_csv "$DATASET_FILE")"
   resolve_data_path "$DATASET_FILE" >/dev/null
 
@@ -88,7 +114,10 @@ for dataset_spec in "${DATASETS[@]}"; do
     for LOOKBACK in "${LOOKBACKS[@]}"; do
       EXTRA_DIRS=("lookback_${LOOKBACK}" "pred_len_${PRED_LEN}")
 
+      echo ""
+      echo "------------------------------------------------------------"
       echo "Treinando/previsões | tipo=$TIPO_SERIE | modelo=$MODEL_NAME | lookback=$LOOKBACK"
+      echo "------------------------------------------------------------"
 
       "$PYTHON_BIN" ./main_test.py \
         --base_de_dados "$DATASET_FILE" \
@@ -104,10 +133,12 @@ for dataset_spec in "${DATASETS[@]}"; do
 
       RAW_PRED_DIR="$RAW_PRED_ROOT/$DATASET_STEM/$MODEL_NAME/${EXTRA_DIRS[0]}/${EXTRA_DIRS[1]}"
       PRED_DIR="$PRED_ROOT/$TIPO_SERIE/$MODEL_NAME/${EXTRA_DIRS[0]}/${EXTRA_DIRS[1]}"
+
       copy_predictions_to_target "$RAW_PRED_DIR" "$PRED_DIR"
       BT_PRED_DIR="$(prepare_backtest_pred_dir "$PRED_DIR")"
 
       for K in "${JANELAS_PREVISAO[@]}"; do
+        echo ""
         echo "Backtest | tipo=$TIPO_SERIE | modelo=$MODEL_NAME | lookback=$LOOKBACK | janela=$K"
 
         "$PYTHON_BIN" -m estrategias.ranking_backtest \
@@ -131,5 +162,6 @@ done
   --root "$SIM_ROOT" \
   --output "$SIM_ROOT/comparativo_metricas.csv"
 
+echo ""
 echo "=== Experimento finalizado em $(date) ==="
 echo "Comparativo: $SIM_ROOT/comparativo_metricas.csv"

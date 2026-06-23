@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/financeiro/retornos/TransformerShrINSpec/lookback_32/pred_len_20/_backtest_janelas_only",
+    "price_path": "data/b3_daily_financeiro.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 1,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.41667661634499376,
+    "annual_return": 0.1730310177341572,
+    "annual_vol": 0.2162937146475161,
+    "sharpe": 0.6011779766511605,
+    "max_drawdown": -0.21043926894598697,
+    "mean_precision_positive": 0.49,
+    "mean_spearman_ic": -0.012158119437061828,
+    "icir": -0.03758384142249299,
+    "mean_n_assets": 3.081818181818182,
+    "n_periods": 550
+  }
+}
