@@ -29,24 +29,48 @@ def _safe_int_from_token(value: str, prefix: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _infer_metadata(json_path: Path, root: Path, payload: dict[str, Any]) -> dict[str, Any]:
+def _first_int_from_parts(parts: tuple[str, ...], prefix: str) -> int | None:
+    for part in parts:
+        value = _safe_int_from_token(part, prefix)
+        if value is not None:
+            return value
+    return None
+
+
+def _last_int_from_parts(parts: tuple[str, ...], prefix: str) -> int | None:
+    for part in reversed(parts):
+        value = _safe_int_from_token(part, prefix)
+        if value is not None:
+            return value
+    return None
+
+
+def _infer_metadata(
+    json_path: Path,
+    root: Path,
+    payload: dict[str, Any],
+    include_pred_len: bool = False,
+) -> dict[str, Any]:
     rel_parts = json_path.relative_to(root).parts
     params = payload.get("params", {}) or {}
 
     tipo_serie = rel_parts[0] if len(rel_parts) >= 1 else "desconhecido"
     modelo = rel_parts[1] if len(rel_parts) >= 2 else "modelo_desconhecido"
-    lookback_dir = rel_parts[2] if len(rel_parts) >= 3 else "lookback_desconhecido"
-    janela_dir = rel_parts[3] if len(rel_parts) >= 4 else json_path.parent.name
 
-    lookback = _safe_int_from_token(lookback_dir, "lookback")
-    janela_previsao = _safe_int_from_token(janela_dir, "k")
+    lookback = _first_int_from_parts(rel_parts, "lookback")
+    pred_len = _first_int_from_parts(rel_parts, "pred_len")
 
+    # Mecanismo antigo: root/tipo/modelo/lookback_X/k_Y/metricas.json
+    # Mecanismo novo:  root/tipo/modelo/lookback_X/pred_len_Y/k_Z/metricas.json
+    janela_previsao = _last_int_from_parts(rel_parts, "k")
     if janela_previsao is None:
         janela_previsao = params.get("rebalance_k")
 
     coluna = f"{tipo_serie}__{modelo}__lookback_{lookback if lookback is not None else 'NA'}"
+    if include_pred_len:
+        coluna = f"{coluna}__pred_len_{pred_len if pred_len is not None else 'NA'}"
 
-    return {
+    meta = {
         "tipo_serie": tipo_serie,
         "modelo": modelo,
         "lookback": lookback,
@@ -54,8 +78,13 @@ def _infer_metadata(json_path: Path, root: Path, payload: dict[str, Any]) -> dic
         "coluna": coluna,
     }
 
+    if include_pred_len:
+        meta["pred_len"] = pred_len
 
-def collect_metrics(root: str | Path) -> pd.DataFrame:
+    return meta
+
+
+def collect_metrics(root: str | Path, include_pred_len: bool = False) -> pd.DataFrame:
     root = Path(root)
     json_files = sorted(root.glob("**/metricas.json"))
     rows: list[dict[str, Any]] = []
@@ -68,7 +97,7 @@ def collect_metrics(root: str | Path) -> pd.DataFrame:
         if not metrics:
             continue
 
-        meta = _infer_metadata(json_path, root, payload)
+        meta = _infer_metadata(json_path, root, payload, include_pred_len=include_pred_len)
         for stat, value in metrics.items():
             rows.append({**meta, "estatistica": stat, "valor": value, "arquivo": str(json_path)})
 
@@ -116,9 +145,14 @@ def main() -> None:
         default=None,
         help="Opcional: salva também a base longa antes do pivot.",
     )
+    parser.add_argument(
+        "--pred_len",
+        action="store_true",
+        help="Inclui pred_len como dimensão nas colunas comparativas.",
+    )
     args = parser.parse_args()
 
-    metrics_long = collect_metrics(args.root)
+    metrics_long = collect_metrics(args.root, include_pred_len=args.pred_len)
     table = build_comparison_table(metrics_long)
 
     output = Path(args.output)
