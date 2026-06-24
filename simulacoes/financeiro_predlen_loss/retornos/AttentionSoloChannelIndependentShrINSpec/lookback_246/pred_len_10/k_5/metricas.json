@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/financeiro_predlen_loss/retornos/AttentionSoloChannelIndependentShrINSpec/lookback_246/pred_len_10/_backtest_janelas_only",
+    "price_path": "data/b3_daily_financeiro.csv",
+    "model_output": "returns",
+    "rebalance_k": 5,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.9086097576723005,
+    "annual_return": 0.3375890749433008,
+    "annual_vol": 0.19565161521450886,
+    "sharpe": 1.5056817937348421,
+    "max_drawdown": -0.10623565905850785,
+    "mean_precision_positive": 0.5491634491634492,
+    "mean_spearman_ic": 0.05580357142857142,
+    "icir": 0.16631784394242533,
+    "mean_n_assets": 3.0357142857142856,
+    "n_periods": 112
+  }
+}
