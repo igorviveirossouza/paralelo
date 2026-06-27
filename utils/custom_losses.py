@@ -225,12 +225,16 @@ def get_loss_kwargs_from_args(args):
 
 def get_loss(loss_name="mse", **loss_kwargs):
     loss_name = loss_name.lower()
+
+    if loss_name == "mse":
+        return nn.MSELoss()
+
     if loss_name == "dilate":
         return DilateLoss(
             alpha=loss_kwargs.get("alpha", 0.5),
             gamma=loss_kwargs.get("gamma", 0.01),
         )
-    if loss_name in "mse_dilate":
+    if loss_name == "mse_dilate":
         return MSEDilateLoss(
             theta=loss_kwargs.get("theta", 0.5),
             alpha=loss_kwargs.get("alpha", 0.5),
@@ -238,4 +242,5 @@ def get_loss(loss_name="mse", **loss_kwargs):
         )
     if loss_name == "mae":
         return nn.L1Loss()
-    return nn.MSELoss()
+    
+    raise ValueError(f"Loss desconhecida: {loss_name}")

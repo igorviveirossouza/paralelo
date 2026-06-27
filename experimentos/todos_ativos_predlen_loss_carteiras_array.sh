@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-119%2
+#SBATCH --array=0-74%4
 #SBATCH --time=48:00:00
 #SBATCH --job-name=all_predlen
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/all-predlen-%A_%a.out
@@ -35,14 +35,14 @@ MODELOS=(
 LOOKBACKS=(32 104 246)
 
 # Não inclui 20 porque o exercício equivalente já foi feito.
-PRED_LENS=(1 5 10 15)
+PRED_LENS=(1 5 10 15 24)
 
-JANELAS_REBALANCEAMENTO=(1 5 10 15 20)
+JANELAS_REBALANCEAMENTO=(1 5 10 15 20 24)
 
 # tipo_saida:arquivo_dataset:model_output
 DATASETS=(
-  "prices:b3_daily_tfb.csv:prices"
-  "retornos:b3_log_returns.csv:returns"
+  #"prices:b3_daily_tfb.csv:prices"
+  "retornos_simples:b3_returns.csv:returns"
 )
 
 EXPERIMENTO="predlen_loss_todos_ativos"
