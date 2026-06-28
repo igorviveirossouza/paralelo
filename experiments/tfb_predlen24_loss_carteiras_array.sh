@@ -1,4 +1,12 @@
 #!/bin/bash
+#SBATCH -p medusas_shr
+#SBATCH --gres=gpu:1
+#SBATCH --array=0-179%6
+#SBATCH --time=48:00:00
+#SBATCH --job-name=all_tfb_carteira
+#SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/all_tfb_carteira-%A_%a.out
+#SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/all_tfb_carteira-%A_%a.err
+
 set -euo pipefail
 
 PARALELO_ROOT="/sonic_home/igor.viveiros/paralelo"
@@ -9,11 +17,15 @@ cd "$PARALELO_ROOT"
 mkdir -p logs
 
 # tipo_saida:data_name_tfb:price_dataset_paralelo:model_output
-DATASETS=("retornos_simples_financeiro:b3_daily_return_financeiro.csv:b3_daily_tfb.csv:returns")
-LOOKBACKS=(32)
-PRED_LENS=(24)
+DATASETS=(
+  "retornos_simples:b3_daily_return.csv:b3_daily_tfb.csv:returns"
+  "log_retornos:b3_log_returns.csv:b3_daily_tfb.csv:log_returns"
+  "prices:b3_daily_tfb.csv:b3_daily_tfb.csv:prices"
+)
+LOOKBACKS=(32 104 246)
+PRED_LENS=(1 5 10 15 24)
 MODELOS=("DUET" "TimesNet" "FEDformer" "Nonstationary_Transformer")
-JANELAS_REBALANCEAMENTO=(10 20 24)
+JANELAS_REBALANCEAMENTO=(1 5 10 15 20 24)
 
 MAX_ASSETS="${MAX_ASSETS:-9}"
 ONLY_POSITIVE="${ONLY_POSITIVE:-true}"

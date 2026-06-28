@@ -151,6 +151,25 @@ def build_signals(
         else:
             raise ValueError("returns_mode deve ser 'step' ou 'cumulative'.")
         pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
+    
+    elif model_output == "log_returns":
+        if returns_mode == "step":
+            pred_k = (
+                predictions[predictions["h"].between(1, rebalance_k)]
+                .assign(log_pred=lambda x: x["y_pred"].astype(float))
+                .groupby(["janela", "origin_step", "papel"], as_index=False)["log_pred"]
+                .sum()
+            )
+            pred_k["pred_ret_k"] = np.exp(pred_k["log_pred"]) - 1.0
+
+        elif returns_mode == "cumulative":
+            pred_k = predictions[predictions["h"] == rebalance_k].copy()
+            pred_k["pred_ret_k"] = np.exp(pred_k["y_pred"].astype(float)) - 1.0
+
+        else:
+            raise ValueError("returns_mode deve ser 'step' ou 'cumulative'.")
+
+        pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
 
     elif model_output == "prices":
         pred_k = predictions[predictions["h"] == rebalance_k].copy()
@@ -159,7 +178,7 @@ def build_signals(
         pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
 
     else:
-        raise ValueError("model_output deve ser 'returns' ou 'prices'.")
+        raise ValueError("model_output deve ser 'returns' 'log_returns' ou 'prices'.")
 
     realized = predictions[predictions["h"] == rebalance_k][
         ["janela", "origin_step", "target_step", "papel"]
@@ -339,7 +358,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pred_dir", required=True, help="Pasta com janela_*.csv.")
     parser.add_argument("--price_path", required=True, help="CSV de preços realizados em formato longo.")
     parser.add_argument("--output_dir", default="simulacoes", help="Pasta raiz para salvar simulações.")
-    parser.add_argument("--model_output", choices=["returns", "prices"], required=True)
+    parser.add_argument("--model_output", choices=["returns","log_returns", "prices"], required=True)
     parser.add_argument("--rebalance_k", type=int, default=5)
     parser.add_argument("--max_assets", type=int, default=5)
     parser.add_argument("--horizon", type=int, default=24)
