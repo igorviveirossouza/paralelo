@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb_multi_lb_predlen_carteiras/retornos_simples/TimesNet/lookback_32/pred_len_24/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "returns",
+    "rebalance_k": 10,
+    "max_assets": 9,
+    "horizon": 10,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.3471120814551012,
+    "annual_return": 0.14627926564519744,
+    "annual_vol": 0.21571309100178093,
+    "sharpe": 0.478780704340029,
+    "max_drawdown": -0.22750659355290181,
+    "mean_precision_positive": 0.5191919191919192,
+    "mean_spearman_ic": 0.01204245831472142,
+    "icir": 0.06192520189493791,
+    "mean_n_assets": 9.0,
+    "n_periods": 55
+  }
+}

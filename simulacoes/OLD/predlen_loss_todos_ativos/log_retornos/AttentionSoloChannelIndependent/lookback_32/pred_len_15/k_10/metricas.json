@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/predlen_loss_todos_ativos/log_retornos/AttentionSoloChannelIndependent/lookback_32/pred_len_15/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "log_returns",
+    "rebalance_k": 10,
+    "max_assets": 9,
+    "horizon": 10,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.13968920781800098,
+    "annual_return": 0.06060555173745086,
+    "annual_vol": 0.15205518934745454,
+    "sharpe": 0.11578395852851295,
+    "max_drawdown": -0.10398019049369056,
+    "mean_precision_positive": 0.5079365079365079,
+    "mean_spearman_ic": 0.0003225650154683794,
+    "icir": 0.0016362200629301837,
+    "mean_n_assets": 9.0,
+    "n_periods": 56
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb_multi_lb_predlen_carteiras/prices/Nonstationary_Transformer/lookback_32/pred_len_1/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "prices",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 1,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 8.531790979118249,
+    "annual_return": 1.7095564570283068,
+    "annual_vol": 0.2581285743398997,
+    "sharpe": 6.45630365134939,
+    "max_drawdown": -0.10363994789756836,
+    "mean_precision_positive": 0.5416945140629351,
+    "mean_spearman_ic": 0.09712184586847986,
+    "icir": 0.5034579021555078,
+    "mean_n_assets": 8.989473684210527,
+    "n_periods": 570
+  }
+}

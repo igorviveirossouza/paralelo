@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb_multi_lb_predlen_carteiras/prices/DUET/lookback_104/pred_len_10/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "prices",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 1,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 7.989233404345102,
+    "annual_return": 1.6816999102689123,
+    "annual_vol": 0.2521230976272893,
+    "sharpe": 6.499602478672477,
+    "max_drawdown": -0.1117442292549955,
+    "mean_precision_positive": 0.5359724697959992,
+    "mean_spearman_ic": 0.0920053147703863,
+    "icir": 0.4843294428965316,
+    "mean_n_assets": 8.996434937611408,
+    "n_periods": 561
+  }
+}

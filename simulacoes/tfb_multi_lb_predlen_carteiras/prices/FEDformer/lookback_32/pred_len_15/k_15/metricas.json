@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/tfb_multi_lb_predlen_carteiras/prices/FEDformer/lookback_32/pred_len_15/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "prices",
+    "rebalance_k": 15,
+    "max_assets": 9,
+    "horizon": 15,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 8.311080405947202,
+    "annual_return": 1.6816372770143424,
+    "annual_vol": 0.29908351211739753,
+    "sharpe": 5.478861958699809,
+    "max_drawdown": -0.06504487496482347,
+    "mean_precision_positive": 0.7251461988304094,
+    "mean_spearman_ic": 0.38363278996534594,
+    "icir": 1.695002272960999,
+    "mean_n_assets": 9.0,
+    "n_periods": 38
+  }
+}
