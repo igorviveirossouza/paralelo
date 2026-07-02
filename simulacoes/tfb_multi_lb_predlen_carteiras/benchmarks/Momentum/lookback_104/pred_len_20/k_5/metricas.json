@@ -1,0 +1,25 @@
+{
+  "params": {
+    "strategy": "momentum",
+    "reference_pred_dir": "previsoes/meu_multi_lb_predlen_todos_ativos/retornos_simples/AttentionSoloChannelIndependent/lookback_104/pred_len_20",
+    "price_path": "data/b3_daily_tfb.csv",
+    "rebalance_k": 5,
+    "max_assets": 9,
+    "horizon": 5,
+    "only_positive_pred": true,
+    "annual_rf": 0.043,
+    "random_seed": null
+  },
+  "metrics": {
+    "total_return": 0.03280437784954149,
+    "annual_return": 0.014899000652792038,
+    "annual_vol": 0.23182184195025984,
+    "sharpe": -0.12121808329534955,
+    "max_drawdown": -0.29909237921174747,
+    "mean_precision_positive": 0.4996536796536795,
+    "mean_spearman_ic": -0.011424127875644988,
+    "icir": -0.06384629148361863,
+    "mean_n_assets": 8.818181818181818,
+    "n_periods": 110
+  }
+}
