@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -p medusas_shr
+#SBATCH -p gorgonas_dev
 #SBATCH --array=0-17%6
-#SBATCH --time=12:00:00
+#SBATCH --time=00:30:00
 #SBATCH --job-name=bench_carteira
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/bench-carteira-%A_%a.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/bench-carteira-%A_%a.err

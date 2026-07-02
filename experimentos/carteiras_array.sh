@@ -40,7 +40,7 @@ JANELAS_REBALANCEAMENTO=(1 5 10 15 20 24)
 
 # tipo_saida:data_name_tfb:price_dataset_paralelo:model_output
 DATASETS=(
-  "retornos_simples:b3_daily_return.csv:b3_daily_tfb.csv:returns"
+  "retornos_simples:b3_returns.csv:b3_daily_tfb.csv:returns"
   "log_retornos:b3_log_returns.csv:b3_daily_tfb.csv:log_returns"
   "prices:b3_daily_tfb.csv:b3_daily_tfb.csv:prices"
 )
@@ -125,7 +125,7 @@ MODEL_IDX=$(( TMP % N_MODELOS ))
 DATASET_IDX=$(( TMP / N_MODELOS ))
 
 DATASET_SPEC="${DATASETS[$DATASET_IDX]}"
-IFS=":" read -r TIPO_SERIE DATASET_FILE MODEL_OUTPUT <<< "$DATASET_SPEC"
+IFS=":" read -r TIPO_SERIE DATASET_FILE PRICE_DATASET MODEL_OUTPUT <<< "$DATASET_SPEC"
 
 MODEL_NAME="${MODELOS[$MODEL_IDX]}"
 LOOKBACK="${LOOKBACKS[$LOOKBACK_IDX]}"

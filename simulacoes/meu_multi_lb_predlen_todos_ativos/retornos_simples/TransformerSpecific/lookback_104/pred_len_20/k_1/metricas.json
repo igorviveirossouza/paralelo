@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/meu_multi_lb_predlen_todos_ativos/retornos_simples/TransformerSpecific/lookback_104/pred_len_20/_backtest_janelas_only",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "returns",
+    "rebalance_k": 1,
+    "max_assets": 9,
+    "horizon": 1,
+    "only_positive_pred": true,
+    "returns_mode": "step",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 0.2229664696553333,
+    "annual_return": 0.09660887781213612,
+    "annual_vol": 0.19809731160707222,
+    "sharpe": 0.2706189063204947,
+    "max_drawdown": -0.12446784701259939,
+    "mean_precision_positive": 0.4905050505050505,
+    "mean_spearman_ic": 0.005040923847285899,
+    "icir": 0.03040133914952997,
+    "mean_n_assets": 9.0,
+    "n_periods": 550
+  }
+}
