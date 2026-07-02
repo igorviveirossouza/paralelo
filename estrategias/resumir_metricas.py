@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from estrategias.acerto_negativos import calcular_acerto_negativos_sinais
+
 
 def _flatten(prefix: str, data: dict) -> dict:
     out: dict = {}
@@ -28,11 +30,14 @@ def collect_metrics(root: str | Path) -> pd.DataFrame:
 
         params = data.get("params", {})
         metrics = data.get("metrics", {})
+        neg_metrics = calcular_acerto_negativos_sinais(path.parent / "sinais.csv")
+
         row = {
             "output_dir": str(path.parent),
             "metricas_path": str(path),
             **_flatten("", params),
             **_flatten("", metrics),
+            **neg_metrics,
         }
         rows.append(row)
 
