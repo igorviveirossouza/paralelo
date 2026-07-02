@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from estrategias.acerto_negativos import calcular_acerto_negativos_sinais
+
 
 DEFAULT_STATS_ORDER = [
     "total_return",
@@ -17,10 +19,15 @@ DEFAULT_STATS_ORDER = [
     "sharpe",
     "max_drawdown",
     "mean_precision_positive",
+    "taxa_acerto_negativos",
+    "mean_precision_negative",
     "mean_spearman_ic",
     "icir",
     "mean_n_assets",
     "n_periods",
+    "n_pred_negativos",
+    "n_acertos_negativos",
+    "n_janelas_com_negativos",
 ]
 
 
@@ -96,6 +103,9 @@ def collect_metrics(root: str | Path, include_pred_len: bool = False) -> pd.Data
         metrics = payload.get("metrics", {}) or {}
         if not metrics:
             continue
+
+        neg_metrics = calcular_acerto_negativos_sinais(json_path.parent / "sinais.csv")
+        metrics = {**metrics, **neg_metrics}
 
         meta = _infer_metadata(json_path, root, payload, include_pred_len=include_pred_len)
         for stat, value in metrics.items():
