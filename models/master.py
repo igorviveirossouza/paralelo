@@ -122,7 +122,7 @@ class TemporalAggregation(nn.Module):
     def forward(self, z):
         # z: (B, N, T, D)
         h = self.trans(z)
-        query = h[:, :, -1, :].unsqueeze(-1)        # (B, N, D, 1)
+        query = h[:, :, -1, :].unsqueeze(-1)         # (B, N, D, 1)
         weights = torch.matmul(h, query).squeeze(-1) # (B, N, T)
         weights = torch.softmax(weights, dim=-1).unsqueeze(-2)
         return torch.matmul(weights, z).squeeze(-2)  # (B, N, D)
@@ -133,11 +133,11 @@ class MASTER(nn.Module):
 
     Entrada padrão:
         x:        (B, L, N)
+        market_x: (B, L, K), opcional/recomendado para fidelidade ao MASTER
         candle_x: (B, L, N, F), opcional
 
-    O modelo preserva os blocos centrais do código oficial:
-    feature gate guiado por mercado, agregação intra-stock,
-    agregação inter-stock e agregação temporal final.
+    A lógica fiel ao paper usa market_x[:, -1, :] como gate_input
+    compartilhado por todos os papéis da data.
     """
 
     def __init__(
@@ -155,6 +155,8 @@ class MASTER(nn.Module):
         embedding_kwargs=None,
         candle_input_dim=None,
         use_candle_features=False,
+        market_input_dim=None,
+        use_market_features=True,
         revin=False,
         revin_affine=False,
     ):
@@ -173,9 +175,14 @@ class MASTER(nn.Module):
         self.forecast_model_name = "MASTER"
         self.use_candle_features = bool(use_candle_features)
         self.candle_input_dim = int(candle_input_dim or 0)
+        self.use_market_features = bool(use_market_features)
+        self.market_input_dim = int(market_input_dim or 0)
 
         self.stock_feature_dim = 1 + (self.candle_input_dim if self.use_candle_features else 0)
-        self.market_state_dim = 4 * self.stock_feature_dim
+        if self.use_market_features and self.market_input_dim <= 0:
+            raise ValueError("MASTER com use_market_features=True requer market_input_dim > 0.")
+
+        self.market_state_dim = self.market_input_dim if self.use_market_features else 4 * self.stock_feature_dim
 
         self.feature_gate = Gate(self.market_state_dim, self.stock_feature_dim, beta=beta)
         self.feature_projection = nn.Linear(self.stock_feature_dim, d_model)
@@ -203,8 +210,8 @@ class MASTER(nn.Module):
             features.append(candle_x)
         return torch.cat(features, dim=-1)
 
-    def _market_state(self, stock_features):
-        # stock_features: (B, L, N, F)
+    def _proxy_market_state(self, stock_features):
+        # Fallback não fiel ao original; mantido apenas para ablação sem market_x.
         last = stock_features[:, -1, :, :]
         last_mean = last.mean(dim=1)
         last_std = last.std(dim=1, unbiased=False)
@@ -214,7 +221,24 @@ class MASTER(nn.Module):
         window_std = window.std(dim=1, unbiased=False)
         return torch.cat([last_mean, last_std, window_mean, window_std], dim=-1)
 
-    def forward(self, x, y=None, return_loss=False, candle_x=None):
+    def _market_state(self, stock_features, market_x=None):
+        if not self.use_market_features:
+            return self._proxy_market_state(stock_features)
+
+        if market_x is None:
+            raise ValueError("MASTER fiel requer market_x com shape (B, L, K).")
+        if market_x.dim() != 3:
+            raise ValueError(f"market_x deve ter shape (B, L, K). Recebido: {tuple(market_x.shape)}")
+        if market_x.shape[:2] != stock_features.shape[:2]:
+            raise ValueError(
+                f"market_x desalinhado: stock_features={tuple(stock_features.shape)}, market_x={tuple(market_x.shape)}"
+            )
+        if market_x.size(-1) != self.market_input_dim:
+            raise ValueError(f"Esperado market_input_dim={self.market_input_dim}, recebido {market_x.size(-1)}")
+
+        return market_x[:, -1, :]
+
+    def forward(self, x, y=None, return_loss=False, candle_x=None, market_x=None):
         if x.dim() != 3:
             raise ValueError(f"Esperado x com shape (batch, seq_len, channels), recebido {tuple(x.shape)}")
 
@@ -225,7 +249,7 @@ class MASTER(nn.Module):
             raise ValueError(f"Esperado {self.enc_in} canais, recebido {channels}")
 
         stock_features = self._build_stock_features(x, candle_x=candle_x)
-        market_state = self._market_state(stock_features)
+        market_state = self._market_state(stock_features, market_x=market_x)
         gate = self.feature_gate(market_state).view(batch, 1, 1, self.stock_feature_dim)
 
         z = stock_features * gate
