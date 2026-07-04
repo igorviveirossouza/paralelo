@@ -61,6 +61,29 @@ def str2bool(value):
     raise argparse.ArgumentTypeError("Valor booleano inválido.")
 
 
+def resolve_input_file(file_name):
+    path = Path(file_name)
+    if path.is_absolute():
+        candidates = [path]
+    else:
+        candidates = [
+            path,
+            Path("data") / file_name,
+            Path("attachments") / file_name,
+            Path("/home/workdir/attachments") / file_name,
+        ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            print(f"✅ Arquivo encontrado em: {candidate}")
+            return str(candidate)
+
+    raise FileNotFoundError(
+        f"Arquivo '{file_name}' não encontrado. Procurei em:\n"
+        + "\n".join(str(candidate) for candidate in candidates)
+    )
+
+
 def add_candle_arguments(parser):
     candle_group = parser.add_argument_group("candle_encoder")
     candle_group.add_argument(
@@ -101,6 +124,44 @@ def add_candle_arguments(parser):
         nargs="*",
         default=None,
         help="Colunas usadas no modo raw. Default: abertura maxima minima data volume.",
+    )
+    return parser
+
+
+def add_market_arguments(parser):
+    market_group = parser.add_argument_group("market_features")
+    market_group.add_argument(
+        "--use_market_features",
+        type=str2bool,
+        default=None,
+        help="Ativa features globais de mercado. Default: True para MASTER, False para os demais.",
+    )
+    market_group.add_argument(
+        "--market_feature_files",
+        type=str,
+        nargs="*",
+        default=["indices.csv"],
+        help="Arquivos em data/ com features globais. Ex.: indices.csv FEATURES_1.csv FEATURES_2.csv.",
+    )
+    market_group.add_argument(
+        "--market_feature_mode",
+        type=str,
+        default="master",
+        choices=["master", "raw"],
+        help="master cria retornos/rolling stats de Close/Volume; raw usa colunas numéricas diretamente.",
+    )
+    market_group.add_argument(
+        "--market_windows",
+        type=int,
+        nargs="*",
+        default=[5, 10, 20, 30, 60],
+        help="Janelas usadas no modo master.",
+    )
+    market_group.add_argument(
+        "--market_date_col",
+        type=str,
+        default=None,
+        help="Coluna de data nos arquivos de mercado. Default: detecta date_pregao/date/datetime.",
     )
     return parser
 
@@ -222,6 +283,7 @@ def main():
     add_loss_arguments(parser)
     add_embedding_arguments(parser)
     add_candle_arguments(parser)
+    add_market_arguments(parser)
     add_timexer_arguments(parser)
     add_master_arguments(parser)
     args = parser.parse_args()
@@ -232,6 +294,11 @@ def main():
     apply_candle_fusion = args.use_candle_encoder and not uses_direct_candle_model
     pass_candle_directly = dataset_uses_candle and uses_direct_candle_model
 
+    if args.use_market_features is None:
+        dataset_uses_market = args.model_name == "MASTER"
+    else:
+        dataset_uses_market = args.use_market_features
+
     print(f"Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
     print(f"  Modelo: {args.model_name}")
@@ -240,10 +307,15 @@ def main():
     print(f"  RevIN affine: {args.revin_affine}")
     print(f"  Candle Encoder Fusion: {apply_candle_fusion}")
     print(f"  OHLCV direto no modelo: {pass_candle_directly}")
+    print(f"  Features globais de mercado: {dataset_uses_market}")
     if dataset_uses_candle:
         print(f"  Candle feature mode: {args.candle_feature_mode}")
         if apply_candle_fusion:
             print(f"  Candle Encoder type: {args.candle_encoder_type}")
+    if dataset_uses_market:
+        print(f"  Market files: {args.market_feature_files}")
+        print(f"  Market feature mode: {args.market_feature_mode}")
+        print(f"  Market windows: {args.market_windows}")
     if args.model_name == "MASTER":
         print(
             "  MASTER: "
@@ -257,26 +329,12 @@ def main():
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
     print(f"  cols: {args.cols if args.cols else 'Multivariate'}\n")
 
-    possible_paths = [
-        args.base_de_dados,
-        f"data/{args.base_de_dados}",
-        str(Path("data") / args.base_de_dados),
-        f"attachments/{args.base_de_dados}",
-        str(Path("/home/workdir/attachments") / args.base_de_dados),
-    ]
-
-    data_path = None
-    for p in possible_paths:
-        if os.path.exists(p):
-            data_path = p
-            print(f"✅ Arquivo encontrado em: {data_path}")
-            break
-
-    if data_path is None:
-        raise FileNotFoundError(
-            f"Arquivo '{args.base_de_dados}' não encontrado.\n"
-            f"Procurei em:\n" + "\n".join(possible_paths)
-        )
+    data_path = resolve_input_file(args.base_de_dados)
+    market_feature_paths = []
+    if dataset_uses_market:
+        if not args.market_feature_files:
+            raise ValueError("Features de mercado ativas, mas nenhum arquivo foi informado em --market_feature_files.")
+        market_feature_paths = [resolve_input_file(file_name) for file_name in args.market_feature_files]
 
     dataset_kwargs = dict(
         data_path=data_path,
@@ -288,6 +346,11 @@ def main():
         use_candle_encoder=dataset_uses_candle,
         candle_cols=args.candle_cols,
         candle_feature_mode=args.candle_feature_mode,
+        use_market_features=dataset_uses_market,
+        market_feature_files=market_feature_paths,
+        market_feature_mode=args.market_feature_mode,
+        market_windows=args.market_windows,
+        market_date_col=args.market_date_col,
     )
 
     train_dataset = TimeSeriesDataset(
@@ -312,6 +375,12 @@ def main():
     if dataset_uses_candle:
         candle_input_dim = len(train_dataset.candle_feature_names)
         print(f"Features do candle detectadas: {candle_input_dim} | {train_dataset.candle_feature_names}")
+
+    market_input_dim = None
+    if dataset_uses_market:
+        market_input_dim = len(train_dataset.market_feature_names)
+        print(f"Features de mercado detectadas: {market_input_dim}")
+        print(f"Nomes market features: {train_dataset.market_feature_names}")
 
     loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
@@ -343,6 +412,8 @@ def main():
             beta=args.master_beta,
             candle_input_dim=candle_input_dim,
             use_candle_features=pass_candle_directly,
+            market_input_dim=market_input_dim,
+            use_market_features=dataset_uses_market,
         )
 
     model = model_class(**model_kwargs)
