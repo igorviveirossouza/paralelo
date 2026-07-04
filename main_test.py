@@ -182,6 +182,12 @@ def add_stock_factor_arguments(parser):
         help="Cria fatores Alpha158-like por papel a partir de OHLCV e adiciona ao src do MASTER.",
     )
     factor_group.add_argument(
+        "--ohlcv_feature_file",
+        type=str,
+        default=None,
+        help="Arquivo OHLCV usado para fatores/candles quando a base-alvo é retorno/log-retorno. Ex.: b3_daily_tfb_ohlcv.csv.",
+    )
+    factor_group.add_argument(
         "--stock_factor_mode",
         type=str,
         default="alpha158",
@@ -206,65 +212,20 @@ def add_stock_factor_arguments(parser):
 
 def add_timexer_arguments(parser):
     timexer_group = parser.add_argument_group("timexer_ohlcv")
-    timexer_group.add_argument(
-        "--timexer_patch_len",
-        type=int,
-        default=16,
-        help="Tamanho do patch temporal endógeno no TimeXerOHLCV.",
-    )
-    timexer_group.add_argument(
-        "--timexer_patch_stride",
-        type=int,
-        default=None,
-        help="Stride dos patches temporais. Default: igual ao patch_len.",
-    )
-    timexer_group.add_argument(
-        "--timexer_num_layers",
-        type=int,
-        default=1,
-        help="Número de camadas Transformer endógenas no TimeXerOHLCV.",
-    )
-    timexer_group.add_argument(
-        "--timexer_dim_feedforward",
-        type=int,
-        default=None,
-        help="Dimensão feedforward do TimeXerOHLCV. Default: 4*d_model.",
-    )
+    timexer_group.add_argument("--timexer_patch_len", type=int, default=16)
+    timexer_group.add_argument("--timexer_patch_stride", type=int, default=None)
+    timexer_group.add_argument("--timexer_num_layers", type=int, default=1)
+    timexer_group.add_argument("--timexer_dim_feedforward", type=int, default=None)
     return parser
 
 
 def add_master_arguments(parser):
     master_group = parser.add_argument_group("master")
-    master_group.add_argument(
-        "--master_d_model",
-        type=int,
-        default=64,
-        help="Dimensão latente do MASTER.",
-    )
-    master_group.add_argument(
-        "--master_t_nhead",
-        type=int,
-        default=4,
-        help="Número de cabeças na agregação intra-stock temporal.",
-    )
-    master_group.add_argument(
-        "--master_s_nhead",
-        type=int,
-        default=2,
-        help="Número de cabeças na agregação inter-stock transversal.",
-    )
-    master_group.add_argument(
-        "--master_dropout",
-        type=float,
-        default=0.3,
-        help="Dropout usado nos blocos de atenção do MASTER.",
-    )
-    master_group.add_argument(
-        "--master_beta",
-        type=float,
-        default=5.0,
-        help="Temperatura beta do feature gate guiado por mercado.",
-    )
+    master_group.add_argument("--master_d_model", type=int, default=64)
+    master_group.add_argument("--master_t_nhead", type=int, default=4)
+    master_group.add_argument("--master_s_nhead", type=int, default=2)
+    master_group.add_argument("--master_dropout", type=float, default=0.3)
+    master_group.add_argument("--master_beta", type=float, default=5.0)
     return parser
 
 
@@ -275,14 +236,9 @@ def salvar_relatorio_loss_treino(train_losses, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    loss_df = pd.DataFrame({
-        "epoch": range(1, len(train_losses) + 1),
-        "train_loss": train_losses,
-    })
-
+    loss_df = pd.DataFrame({"epoch": range(1, len(train_losses) + 1), "train_loss": train_losses})
     csv_path = output_dir / "train_loss.csv"
     png_path = output_dir / "train_loss.png"
-
     loss_df.to_csv(csv_path, index=False)
 
     plt.figure(figsize=(10, 4))
@@ -311,13 +267,7 @@ def main():
     parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
     parser.add_argument('--revin', type=str2bool, default=False, help='Ativa RevIN: true/false')
     parser.add_argument("--revin_affine", type=str2bool, default=False)
-    parser.add_argument(
-        '--model_name',
-        type=str,
-        default='AttentionSoloNaive',
-        choices=list(MODEL_REGISTRY.keys()),
-        help='Modelo a ser treinado/executado'
-    )
+    parser.add_argument('--model_name', type=str, default='AttentionSoloNaive', choices=list(MODEL_REGISTRY.keys()))
     add_loss_arguments(parser)
     add_embedding_arguments(parser)
     add_candle_arguments(parser)
@@ -341,7 +291,7 @@ def main():
     else:
         dataset_uses_market = args.use_market_features
 
-    print(f"Configuração:")
+    print("Configuração:")
     print(f"  Base de dados: {args.base_de_dados}")
     print(f"  Modelo: {args.model_name}")
     print(f"  Embedding: {args.embedding_type}")
@@ -351,6 +301,8 @@ def main():
     print(f"  OHLCV direto no modelo: {pass_candle_directly and args.use_candle_encoder}")
     print(f"  Stock factors no src: {args.use_stock_factors}")
     print(f"  Features globais de mercado: {dataset_uses_market}")
+    if dataset_uses_candle and args.ohlcv_feature_file:
+        print(f"  Fonte OHLCV/fatores: {args.ohlcv_feature_file}")
     if dataset_uses_candle and args.use_candle_encoder:
         print(f"  Candle feature mode: {args.candle_feature_mode}")
         if apply_candle_fusion:
@@ -377,6 +329,11 @@ def main():
     print(f"  cols: {args.cols if args.cols else 'Multivariate'}\n")
 
     data_path = resolve_input_file(args.base_de_dados)
+
+    ohlcv_feature_path = None
+    if dataset_uses_candle and args.ohlcv_feature_file:
+        ohlcv_feature_path = resolve_input_file(args.ohlcv_feature_file)
+
     market_feature_paths = []
     if dataset_uses_market:
         if not args.market_feature_files:
@@ -393,6 +350,7 @@ def main():
         use_candle_encoder=args.use_candle_encoder,
         candle_cols=args.candle_cols,
         candle_feature_mode=args.candle_feature_mode,
+        feature_source_path=ohlcv_feature_path,
         use_market_features=dataset_uses_market,
         market_feature_files=market_feature_paths,
         market_feature_mode=args.market_feature_mode,
@@ -404,15 +362,8 @@ def main():
         stock_factor_normalize=args.stock_factor_normalize,
     )
 
-    train_dataset = TimeSeriesDataset(
-        train=True,
-        **dataset_kwargs,
-    )
-
-    test_dataset = TimeSeriesDataset(
-        train=False,
-        **dataset_kwargs,
-    )
+    train_dataset = TimeSeriesDataset(train=True, **dataset_kwargs)
+    test_dataset = TimeSeriesDataset(train=False, **dataset_kwargs)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     print(f"\nDataLoader de treino criado com {len(train_loader)} batches\n")
@@ -488,7 +439,7 @@ def main():
             enc_in=enc_in,
             loss_name=args.loss_name,
             loss_kwargs=loss_kwargs,
-            affine=args.revin_affine
+            affine=args.revin_affine,
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -505,7 +456,6 @@ def main():
     for epoch in range(args.epochs):
         train_loss = trainer.train_one_epoch(train_loader)
         train_losses.append(train_loss)
-
         if epoch == 0 or (epoch + 1) % 5 == 0 or epoch == args.epochs - 1:
             print(f"Epoch {epoch + 1}/{args.epochs} | Train loss: {train_loss:.6f}")
 
