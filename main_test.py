@@ -84,6 +84,13 @@ def resolve_input_file(file_name):
     )
 
 
+def _preview_list(values, max_items=12):
+    values = list(values or [])
+    if len(values) <= max_items:
+        return values
+    return values[:max_items] + [f"... +{len(values) - max_items}"]
+
+
 def add_candle_arguments(parser):
     candle_group = parser.add_argument_group("candle_encoder")
     candle_group.add_argument(
@@ -162,6 +169,37 @@ def add_market_arguments(parser):
         type=str,
         default=None,
         help="Coluna de data nos arquivos de mercado. Default: detecta date_pregao/date/datetime.",
+    )
+    return parser
+
+
+def add_stock_factor_arguments(parser):
+    factor_group = parser.add_argument_group("stock_factors")
+    factor_group.add_argument(
+        "--use_stock_factors",
+        type=str2bool,
+        default=False,
+        help="Cria fatores Alpha158-like por papel a partir de OHLCV e adiciona ao src do MASTER.",
+    )
+    factor_group.add_argument(
+        "--stock_factor_mode",
+        type=str,
+        default="alpha158",
+        choices=["alpha158"],
+        help="Modo de construção dos fatores por papel.",
+    )
+    factor_group.add_argument(
+        "--stock_factor_windows",
+        type=int,
+        nargs="*",
+        default=[5, 10, 20, 30, 60],
+        help="Janelas usadas nos fatores Alpha158.",
+    )
+    factor_group.add_argument(
+        "--stock_factor_normalize",
+        type=str2bool,
+        default=True,
+        help="Aplica RobustZScoreNorm com estatísticas do treino e clip [-3, 3].",
     )
     return parser
 
@@ -284,13 +322,17 @@ def main():
     add_embedding_arguments(parser)
     add_candle_arguments(parser)
     add_market_arguments(parser)
+    add_stock_factor_arguments(parser)
     add_timexer_arguments(parser)
     add_master_arguments(parser)
     args = parser.parse_args()
 
+    if args.use_stock_factors and args.model_name != "MASTER":
+        raise ValueError("--use_stock_factors está implementado apenas para --model_name MASTER.")
+
     uses_direct_candle_model = args.model_name in DIRECT_CANDLE_MODEL_NAMES
     requires_candle = args.model_name in REQUIRED_CANDLE_MODEL_NAMES
-    dataset_uses_candle = args.use_candle_encoder or requires_candle
+    dataset_uses_candle = args.use_candle_encoder or requires_candle or args.use_stock_factors
     apply_candle_fusion = args.use_candle_encoder and not uses_direct_candle_model
     pass_candle_directly = dataset_uses_candle and uses_direct_candle_model
 
@@ -306,12 +348,17 @@ def main():
     print(f"  RevIN: {args.revin}")
     print(f"  RevIN affine: {args.revin_affine}")
     print(f"  Candle Encoder Fusion: {apply_candle_fusion}")
-    print(f"  OHLCV direto no modelo: {pass_candle_directly}")
+    print(f"  OHLCV direto no modelo: {pass_candle_directly and args.use_candle_encoder}")
+    print(f"  Stock factors no src: {args.use_stock_factors}")
     print(f"  Features globais de mercado: {dataset_uses_market}")
-    if dataset_uses_candle:
+    if dataset_uses_candle and args.use_candle_encoder:
         print(f"  Candle feature mode: {args.candle_feature_mode}")
         if apply_candle_fusion:
             print(f"  Candle Encoder type: {args.candle_encoder_type}")
+    if args.use_stock_factors:
+        print(f"  Stock factor mode: {args.stock_factor_mode}")
+        print(f"  Stock factor windows: {args.stock_factor_windows}")
+        print(f"  Stock factor normalize: {args.stock_factor_normalize}")
     if dataset_uses_market:
         print(f"  Market files: {args.market_feature_files}")
         print(f"  Market feature mode: {args.market_feature_mode}")
@@ -343,7 +390,7 @@ def main():
         stride=1,
         cols=args.cols,
         test_ratio=args.test_ratio,
-        use_candle_encoder=dataset_uses_candle,
+        use_candle_encoder=args.use_candle_encoder,
         candle_cols=args.candle_cols,
         candle_feature_mode=args.candle_feature_mode,
         use_market_features=dataset_uses_market,
@@ -351,6 +398,10 @@ def main():
         market_feature_mode=args.market_feature_mode,
         market_windows=args.market_windows,
         market_date_col=args.market_date_col,
+        use_stock_factors=args.use_stock_factors,
+        stock_factor_mode=args.stock_factor_mode,
+        stock_factor_windows=args.stock_factor_windows,
+        stock_factor_normalize=args.stock_factor_normalize,
     )
 
     train_dataset = TimeSeriesDataset(
@@ -374,13 +425,14 @@ def main():
     candle_input_dim = None
     if dataset_uses_candle:
         candle_input_dim = len(train_dataset.candle_feature_names)
-        print(f"Features do candle detectadas: {candle_input_dim} | {train_dataset.candle_feature_names}")
+        print(f"Features por papel no src detectadas: {candle_input_dim}")
+        print(f"Nomes src extras: {_preview_list(train_dataset.candle_feature_names)}")
 
     market_input_dim = None
     if dataset_uses_market:
         market_input_dim = len(train_dataset.market_feature_names)
         print(f"Features de mercado detectadas: {market_input_dim}")
-        print(f"Nomes market features: {train_dataset.market_feature_names}")
+        print(f"Nomes market features: {_preview_list(train_dataset.market_feature_names)}")
 
     loss_kwargs = get_loss_kwargs_from_args(args)
     model_class = MODEL_REGISTRY[args.model_name]
