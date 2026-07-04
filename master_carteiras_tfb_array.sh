@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-89%2
+#SBATCH --array=0-107%2
 #SBATCH --time=48:00:00
 #SBATCH --job-name=master_tfb_cart
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/master-tfb-cart-%A_%a.out
@@ -32,8 +32,8 @@ MARKET_FEATURE_FILES_STR="${MARKET_FEATURE_FILES:-indices.csv}"
 read -r -a MARKET_FEATURE_FILES_ARR <<< "$MARKET_FEATURE_FILES_STR"
 
 LOOKBACKS=(32 104 246)
-PRED_LENS=(1 5 10 15 24)
-JANELAS_REBALANCEAMENTO=(1 5 10 15 20 24)
+# No MASTER fiel, pred_len é horizonte econômico h e deve coincidir com a janela k.
+PRED_LENS=(1 5 10 15 20 24)
 
 # tipo_saida:data_name_tfb:price_dataset_paralelo:model_output
 DATASETS=(
@@ -69,6 +69,7 @@ IFS=':' read -r TIPO_SAIDA DATA_NAME_TFB PRICE_DATASET MODEL_OUTPUT <<< "${DATAS
 VARIANT="${VARIANTS[$variant_idx]}"
 LOOKBACK="${LOOKBACKS[$lookback_idx]}"
 PRED_LEN="${PRED_LENS[$pred_idx]}"
+REBALANCE_K="$PRED_LEN"
 
 case "$VARIANT" in
   full)
@@ -87,14 +88,34 @@ case "$VARIANT" in
     ;;
 esac
 
+case "$MODEL_OUTPUT" in
+  returns)
+    MASTER_TARGET_MODE="returns_cumulative"
+    RETURNS_MODE="cumulative"
+    ;;
+  log_returns)
+    MASTER_TARGET_MODE="log_returns_cumulative"
+    RETURNS_MODE="cumulative"
+    ;;
+  prices)
+    MASTER_TARGET_MODE="last"
+    RETURNS_MODE="cumulative"
+    ;;
+  *)
+    echo "MODEL_OUTPUT inválido: $MODEL_OUTPUT"
+    exit 1
+    ;;
+esac
+
 DATA_STEM="${DATA_NAME_TFB%.csv}"
 PRED_DIR="${FORECAST_ROOT}/${DATA_STEM}/MASTER/${VARIANT_DIR}/lookback_${LOOKBACK}/pred_len_${PRED_LEN}/loss_${LOSS_NAME}"
 
-RUN_PREFIX="${DATA_STEM}__${VARIANT_DIR}__lb${LOOKBACK}__pl${PRED_LEN}__loss${LOSS_NAME}"
+RUN_PREFIX="${DATA_STEM}__${VARIANT_DIR}__lb${LOOKBACK}__h${PRED_LEN}__loss${LOSS_NAME}"
+RUN_NAME="${RUN_PREFIX}__k${REBALANCE_K}__${MODEL_OUTPUT}"
 
 cat <<EOF
 ============================================================
-MASTER carteira TFB
+MASTER carteira TFB - horizonte escalar fiel
 TASK_ID:                 $TASK_ID / $((TOTAL - 1))
 Dataset alvo:            $DATA_NAME_TFB
 Tipo saída:              $TIPO_SAIDA
@@ -102,7 +123,8 @@ Dataset preços carteira: $PRICE_DATASET
 Model output:            $MODEL_OUTPUT
 Variant:                 $VARIANT_DIR
 Lookback:                $LOOKBACK
-Pred len:                $PRED_LEN
+Horizonte h / k:         $PRED_LEN
+Target mode:             $MASTER_TARGET_MODE
 Loss:                    $LOSS_NAME
 Forecast dir:            $PRED_DIR
 Sim root:                $SIM_ROOT
@@ -122,6 +144,7 @@ EOF
   --loss_name "$LOSS_NAME" \
   --output_dir "$FORECAST_ROOT" \
   --extra_dirs "$VARIANT_DIR" "lookback_${LOOKBACK}" "pred_len_${PRED_LEN}" "loss_${LOSS_NAME}" \
+  --master_target_mode "$MASTER_TARGET_MODE" \
   --use_stock_factors "$USE_STOCK_FACTORS" \
   --stock_factor_mode alpha158 \
   --stock_factor_normalize true \
@@ -132,27 +155,19 @@ EOF
   --market_feature_files "${MARKET_FEATURE_FILES_ARR[@]}" \
   --market_feature_mode master
 
-for K in "${JANELAS_REBALANCEAMENTO[@]}"; do
-  if (( K > PRED_LEN )); then
-    echo "Pulando rebalance_k=$K porque é maior que pred_len=$PRED_LEN."
-    continue
-  fi
+echo "Gerando carteira: $RUN_NAME"
 
-  RUN_NAME="${RUN_PREFIX}__k${K}__${MODEL_OUTPUT}"
-  echo "Gerando carteira: $RUN_NAME"
+"$PYTHON_BIN" estrategias/ranking_backtest.py \
+  --pred_dir "$PRED_DIR" \
+  --price_path "data/${PRICE_DATASET}" \
+  --output_dir "$SIM_ROOT" \
+  --model_output "$MODEL_OUTPUT" \
+  --rebalance_k "$REBALANCE_K" \
+  --max_assets "$MAX_ASSETS" \
+  --horizon "$PRED_LEN" \
+  --only_positive_pred "$ONLY_POSITIVE_PRED" \
+  --returns_mode "$RETURNS_MODE" \
+  --annual_rf "$ANNUAL_RF" \
+  --run_name "$RUN_NAME"
 
-  "$PYTHON_BIN" estrategias/ranking_backtest.py \
-    --pred_dir "$PRED_DIR" \
-    --price_path "data/${PRICE_DATASET}" \
-    --output_dir "$SIM_ROOT" \
-    --model_output "$MODEL_OUTPUT" \
-    --rebalance_k "$K" \
-    --max_assets "$MAX_ASSETS" \
-    --horizon "$PRED_LEN" \
-    --only_positive_pred "$ONLY_POSITIVE_PRED" \
-    --returns_mode step \
-    --annual_rf "$ANNUAL_RF" \
-    --run_name "$RUN_NAME"
-done
-
-echo "✅ Experimento MASTER concluído: $RUN_PREFIX"
+echo "✅ Experimento MASTER concluído: $RUN_NAME"
