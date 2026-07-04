@@ -226,6 +226,13 @@ def add_master_arguments(parser):
     master_group.add_argument("--master_s_nhead", type=int, default=2)
     master_group.add_argument("--master_dropout", type=float, default=0.3)
     master_group.add_argument("--master_beta", type=float, default=5.0)
+    master_group.add_argument(
+        "--master_target_mode",
+        type=str,
+        default="returns_cumulative",
+        choices=["returns_cumulative", "log_returns_cumulative", "last"],
+        help="Como reduzir y[:, 1:h] para o alvo escalar do MASTER.",
+    )
     return parser
 
 
@@ -321,9 +328,10 @@ def main():
             f"d_model={args.master_d_model} | "
             f"t_nhead={args.master_t_nhead} | "
             f"s_nhead={args.master_s_nhead} | "
-            f"beta={args.master_beta}"
+            f"beta={args.master_beta} | "
+            f"target_mode={args.master_target_mode}"
         )
-    print(f"  lookback: {args.lookback} | pred_len: {args.pred_len}")
+    print(f"  lookback: {args.lookback} | pred_len/horizonte: {args.pred_len}")
     print(f"  test_ratio: {args.test_ratio} | batch_size: {args.batch_size}")
     print(f"  epochs: {args.epochs} | Loss: {args.loss_name}")
     print(f"  cols: {args.cols if args.cols else 'Multivariate'}\n")
@@ -417,6 +425,7 @@ def main():
             use_candle_features=pass_candle_directly,
             market_input_dim=market_input_dim,
             use_market_features=dataset_uses_market,
+            master_target_mode=args.master_target_mode,
         )
 
     model = model_class(**model_kwargs)
