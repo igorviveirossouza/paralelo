@@ -136,8 +136,10 @@ class MASTER(nn.Module):
         market_x: (B, L, K), opcional/recomendado para fidelidade ao MASTER
         candle_x: (B, L, N, F), opcional
 
-    A lógica fiel ao paper usa market_x[:, -1, :] como gate_input
-    compartilhado por todos os papéis da data.
+    Saída fiel ao MASTER:
+        output: (B, 1, N), um score por papel para o horizonte pred_len.
+
+    O pred_len aqui é horizonte econômico h, não tamanho da trajetória prevista.
     """
 
     def __init__(
@@ -157,6 +159,7 @@ class MASTER(nn.Module):
         use_candle_features=False,
         market_input_dim=None,
         use_market_features=True,
+        master_target_mode="returns_cumulative",
         revin=False,
         revin_affine=False,
     ):
@@ -170,13 +173,20 @@ class MASTER(nn.Module):
 
         self.lookback = lookback
         self.pred_len = pred_len
+        self.output_horizon = pred_len
+        self.is_horizon_scalar_forecast = True
         self.enc_in = enc_in
         self.d_model = d_model
         self.forecast_model_name = "MASTER"
+        self.master_target_mode = master_target_mode
         self.use_candle_features = bool(use_candle_features)
         self.candle_input_dim = int(candle_input_dim or 0)
         self.use_market_features = bool(use_market_features)
         self.market_input_dim = int(market_input_dim or 0)
+
+        valid_modes = {"returns_cumulative", "log_returns_cumulative", "last"}
+        if self.master_target_mode not in valid_modes:
+            raise ValueError(f"master_target_mode deve ser um de {sorted(valid_modes)}.")
 
         self.stock_feature_dim = 1 + (self.candle_input_dim if self.use_candle_features else 0)
         if self.use_market_features and self.market_input_dim <= 0:
@@ -190,7 +200,7 @@ class MASTER(nn.Module):
         self.intra_stock = TemporalSelfAttention(d_model=d_model, nhead=t_nhead, dropout=dropout)
         self.inter_stock = SpatialSelfAttention(d_model=d_model, nhead=s_nhead, dropout=dropout)
         self.temporal_aggregation = TemporalAggregation(d_model=d_model)
-        self.decoder = nn.Linear(d_model, pred_len)
+        self.decoder = nn.Linear(d_model, 1)
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
     def _build_stock_features(self, x, candle_x=None):
@@ -238,6 +248,23 @@ class MASTER(nn.Module):
 
         return market_x[:, -1, :]
 
+    def _target_from_y(self, y):
+        if y.dim() != 3:
+            raise ValueError(f"Esperado y com shape (B, H, N), recebido {tuple(y.shape)}")
+        if y.size(1) < self.pred_len:
+            raise ValueError(f"y possui horizonte {y.size(1)}, menor que pred_len={self.pred_len}")
+
+        future = y[:, -self.pred_len:, :]
+
+        if self.master_target_mode == "returns_cumulative":
+            return torch.prod(1.0 + future, dim=1, keepdim=True) - 1.0
+
+        if self.master_target_mode == "log_returns_cumulative":
+            return torch.sum(future, dim=1, keepdim=True)
+
+        # prices ou qualquer alvo em nível: usa o valor no horizonte h.
+        return future[:, -1:, :]
+
     def forward(self, x, y=None, return_loss=False, candle_x=None, market_x=None):
         if x.dim() != 3:
             raise ValueError(f"Esperado x com shape (batch, seq_len, channels), recebido {tuple(x.shape)}")
@@ -260,10 +287,11 @@ class MASTER(nn.Module):
         z = self.inter_stock(z)
         z = self.temporal_aggregation(z)  # (B, N, D)
 
-        output = self.decoder(z).transpose(1, 2)  # (B, pred_len, N)
+        output = self.decoder(z).transpose(1, 2)  # (B, 1, N)
 
         if return_loss and y is not None:
-            loss = self.loss_fn(output, y[:, -self.pred_len:, :])
+            target = self._target_from_y(y)
+            loss = self.loss_fn(output, target)
             return output, loss
         return output
 
