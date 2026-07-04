@@ -55,6 +55,9 @@ def load_prediction_windows(
     do alvo previsto em cada horizonte, compatível com ``date`` na base de preços.
     Se a coluna ``origin_step`` existir, ela será usada como data de origem da
     previsão. Caso contrário, mantém o comportamento antigo: ``min(step) - 1``.
+
+    Se a coluna ``h`` existir, ela é preservada. Isso permite previsões escalares
+    do MASTER, por exemplo uma única linha com ``h=20``.
     """
     pred_dir = Path(pred_dir)
     files = sorted(pred_dir.glob(file_glob))
@@ -67,8 +70,16 @@ def load_prediction_windows(
         if step_col not in wide.columns:
             raise ValueError(f"Arquivo {file_path} não contém coluna {step_col!r}.")
 
-        if horizon is not None:
+        if "h" in wide.columns:
+            wide = wide.copy()
+            wide["h"] = pd.to_numeric(wide["h"], errors="raise").astype(int)
+            if horizon is not None:
+                wide = wide[wide["h"] <= horizon].copy()
+        elif horizon is not None:
             wide = wide.iloc[:horizon].copy()
+
+        if wide.empty:
+            continue
 
         steps = pd.to_numeric(wide[step_col], errors="raise").astype(int)
         origin_step = _origin_step_from_window(wide, steps)
@@ -78,7 +89,10 @@ def load_prediction_windows(
             raise ValueError(f"Arquivo {file_path} não contém colunas de papéis.")
 
         tmp = wide[asset_cols].copy()
-        tmp["h"] = np.arange(1, len(tmp) + 1)
+        if "h" in wide.columns:
+            tmp["h"] = wide["h"].values
+        else:
+            tmp["h"] = np.arange(1, len(tmp) + 1)
         tmp["target_step"] = steps.values
         tmp["origin_step"] = origin_step
         tmp["janela"] = file_path.stem
@@ -90,6 +104,8 @@ def load_prediction_windows(
         )
         frames.append(long)
 
+    if not frames:
+        raise ValueError(f"Nenhuma previsão válida encontrada em {pred_dir}.")
     return pd.concat(frames, ignore_index=True)
 
 
@@ -151,7 +167,7 @@ def build_signals(
         else:
             raise ValueError("returns_mode deve ser 'step' ou 'cumulative'.")
         pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
-    
+
     elif model_output == "log_returns":
         if returns_mode == "step":
             pred_k = (
@@ -358,7 +374,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pred_dir", required=True, help="Pasta com janela_*.csv.")
     parser.add_argument("--price_path", required=True, help="CSV de preços realizados em formato longo.")
     parser.add_argument("--output_dir", default="simulacoes", help="Pasta raiz para salvar simulações.")
-    parser.add_argument("--model_output", choices=["returns","log_returns", "prices"], required=True)
+    parser.add_argument("--model_output", choices=["returns", "log_returns", "prices"], required=True)
     parser.add_argument("--rebalance_k", type=int, default=5)
     parser.add_argument("--max_assets", type=int, default=5)
     parser.add_argument("--horizon", type=int, default=24)
