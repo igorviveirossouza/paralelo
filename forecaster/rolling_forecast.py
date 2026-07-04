@@ -38,6 +38,24 @@ def _resolve_temporal_labels(dataset, target_positions, origin_pos):
     return origin_step, target_steps
 
 
+def _split_optional_inputs(sample):
+    seq_x, seq_y = sample[0], sample[1]
+    seq_candle = None
+    seq_market = None
+
+    for extra in sample[2:]:
+        if extra.dim() == 3:
+            # [L, N, F]
+            seq_candle = extra
+        elif extra.dim() == 2:
+            # [L, K]
+            seq_market = extra
+        else:
+            raise ValueError(f"Extra inesperado com shape {tuple(extra.shape)}")
+
+    return seq_x, seq_y, seq_candle, seq_market
+
+
 def run_one_step_rolling_forecast(
     model,
     dataset,
@@ -79,13 +97,9 @@ def run_one_step_rolling_forecast(
     with torch.no_grad():
         for idx in range(len(dataset)):
             sample = dataset[idx]
-            if len(sample) == 2:
-                seq_x, _ = sample
-                seq_candle = None
-            elif len(sample) == 3:
-                seq_x, _, seq_candle = sample
-            else:
+            if len(sample) < 2:
                 raise ValueError(f"Amostra inesperada com {len(sample)} elementos")
+            seq_x, _, seq_candle, seq_market = _split_optional_inputs(sample)
 
             global_start = dataset.indices[idx]
 
@@ -93,6 +107,8 @@ def run_one_step_rolling_forecast(
             forward_kwargs = {}
             if seq_candle is not None:
                 forward_kwargs["candle_x"] = seq_candle.unsqueeze(0).to(device)
+            if seq_market is not None:
+                forward_kwargs["market_x"] = seq_market.unsqueeze(0).to(device)
 
             pred = model(batch_x, **forward_kwargs)
             if isinstance(pred, tuple):
