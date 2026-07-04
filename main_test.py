@@ -262,7 +262,7 @@ def salvar_relatorio_loss_treino(train_losses, output_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base_de_dados', type=str, default='b3_daily_financeiro.csv')
+    parser.add_argument('--base_de_dados', type=str, default='b3_daily_tfb.csv')
     parser.add_argument('--cols', type=str, default=None, help="None para multivariate, ou nome do ticker")
     parser.add_argument('--lookback', type=int, default=96)
     parser.add_argument('--pred_len', type=int, default=24)
