@@ -8,6 +8,7 @@ import pandas as pd
 
 DEFAULT_CANDLE_COLS = ["abertura", "maxima", "minima", "data", "volume"]
 DEFAULT_MARKET_WINDOWS = [5, 10, 20, 30, 60]
+DEFAULT_FACTOR_WINDOWS = [5, 10, 20, 30, 60]
 
 
 class TimeSeriesDataset(Dataset):
@@ -15,10 +16,15 @@ class TimeSeriesDataset(Dataset):
     Dataset flexível para o projeto paralelo.
     Suporta modo Multivariate e Univariate + split Train/Test.
 
-    Quando use_candle_encoder=True, retorna também candle_x:
+    Quando há features por papel, retorna também candle_x:
         x:        [lookback, N]
         y:        [pred_len, N]
         candle_x: [lookback, N, F]
+
+    candle_x pode conter:
+        - fatores Alpha158-like por papel;
+        - OHLCV relativo opcional;
+        - ou ambos concatenados.
 
     Quando use_market_features=True, retorna também market_x:
         market_x: [lookback, K]
@@ -29,17 +35,22 @@ class TimeSeriesDataset(Dataset):
                  candle_feature_mode="ohlcv_relative",
                  use_market_features=False, market_feature_files=None,
                  market_feature_mode="master", market_windows=None,
-                 market_date_col=None):
+                 market_date_col=None,
+                 use_stock_factors=False, stock_factor_mode="alpha158",
+                 stock_factor_windows=None, stock_factor_normalize=True):
         super().__init__()
         self.lookback = lookback
         self.horizon = pred_len
         self.stride = stride
         self.cols = cols          # None = multivariate, str = ticker específico
         self.train = train
-        self.use_candle_encoder = use_candle_encoder
+        self.raw_candle_enabled = bool(use_candle_encoder)
+        self.use_stock_factors = bool(use_stock_factors)
+        self.use_candle_encoder = self.raw_candle_enabled or self.use_stock_factors
         self.candle_cols = candle_cols or DEFAULT_CANDLE_COLS
         self.candle_feature_mode = candle_feature_mode
         self.candle_feature_names = []
+        self.stock_factor_names = []
         self.candle_data = None
         self.use_market_features = bool(use_market_features)
         self.market_feature_files = market_feature_files or []
@@ -48,6 +59,9 @@ class TimeSeriesDataset(Dataset):
         self.market_date_col = market_date_col
         self.market_feature_names = []
         self.market_data = None
+        self.stock_factor_mode = stock_factor_mode
+        self.stock_factor_windows = stock_factor_windows or DEFAULT_FACTOR_WINDOWS
+        self.stock_factor_normalize = bool(stock_factor_normalize)
         self.date_index = []
 
         df = pd.read_csv(data_path)
@@ -67,11 +81,34 @@ class TimeSeriesDataset(Dataset):
         df_pivot = df_pivot.ffill().bfill().fillna(0.0)
         self.date_index = df_pivot.index.tolist()
 
+        T_all = len(df_pivot)
+        test_size = int(T_all * test_ratio)
+        split_idx = T_all - test_size
+
+        stock_factor_np = None
+        if self.use_stock_factors:
+            stock_factor_frame, self.stock_factor_names = self._build_stock_factor_features(df)
+            factor_pivots = []
+            for feature_name in self.stock_factor_names:
+                feature_pivot = stock_factor_frame.pivot(index="date", columns="cols", values=feature_name)
+                feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
+                feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
+                factor_pivots.append(feature_pivot.values)
+
+            stock_factor_np = np.stack(factor_pivots, axis=-1).astype("float32")  # [T, N, F]
+            if self.stock_factor_normalize:
+                stock_factor_np = self._robust_normalize_cube(stock_factor_np, split_idx)
+            print(
+                f"✅ Stock factors ativos | modo={self.stock_factor_mode} | "
+                f"F={len(self.stock_factor_names)} | Shape factors: {stock_factor_np.shape}"
+            )
+
         candle_np = None
-        if use_candle_encoder:
-            candle_frame, self.candle_feature_names = self._build_candle_features(df)
+        raw_candle_feature_names = []
+        if self.raw_candle_enabled:
+            candle_frame, raw_candle_feature_names = self._build_candle_features(df)
             candle_pivots = []
-            for feature_name in self.candle_feature_names:
+            for feature_name in raw_candle_feature_names:
                 feature_pivot = candle_frame.pivot(index="date", columns="cols", values=feature_name)
                 feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
@@ -79,9 +116,24 @@ class TimeSeriesDataset(Dataset):
 
             candle_np = np.stack(candle_pivots, axis=-1).astype("float32")  # [T, N, F]
             print(
-                f"✅ Candle Encoder ativo | features: {self.candle_feature_names} | "
+                f"✅ Candle Encoder ativo | features: {raw_candle_feature_names} | "
                 f"Shape OHLCV: {candle_np.shape}"
             )
+
+        per_stock_parts = []
+        per_stock_names = []
+        if stock_factor_np is not None:
+            per_stock_parts.append(stock_factor_np)
+            per_stock_names.extend(self.stock_factor_names)
+        if candle_np is not None:
+            per_stock_parts.append(candle_np)
+            per_stock_names.extend(raw_candle_feature_names)
+
+        per_stock_np = None
+        if per_stock_parts:
+            per_stock_np = np.concatenate(per_stock_parts, axis=-1).astype("float32")
+            self.candle_feature_names = per_stock_names
+            print(f"✅ Features por papel no src | F_total={len(per_stock_names)} | Shape: {per_stock_np.shape}")
 
         market_np = None
         if self.use_market_features:
@@ -98,8 +150,8 @@ class TimeSeriesDataset(Dataset):
             # === MULTIVARIATE ===
             self.data = torch.tensor(df_pivot.values, dtype=torch.float32)  # [T, N]
             self.feature_columns = df_pivot.columns.tolist()
-            if candle_np is not None:
-                self.candle_data = torch.tensor(candle_np, dtype=torch.float32)
+            if per_stock_np is not None:
+                self.candle_data = torch.tensor(per_stock_np, dtype=torch.float32)
             self.mode = "multivariate"
             print(f"✅ Modo Multivariate - {len(self.feature_columns)} séries | Shape: {self.data.shape}")
         else:
@@ -109,8 +161,8 @@ class TimeSeriesDataset(Dataset):
             col_idx = df_pivot.columns.get_loc(cols)
             self.data = torch.tensor(df_pivot[cols].values, dtype=torch.float32).unsqueeze(1)  # [T, 1]
             self.feature_columns = [cols]
-            if candle_np is not None:
-                self.candle_data = torch.tensor(candle_np[:, col_idx:col_idx + 1, :], dtype=torch.float32)
+            if per_stock_np is not None:
+                self.candle_data = torch.tensor(per_stock_np[:, col_idx:col_idx + 1, :], dtype=torch.float32)
             self.mode = "univariate"
             print(f"✅ Modo Univariate - Ticker: {cols} | Shape: {self.data.shape}")
 
@@ -119,9 +171,6 @@ class TimeSeriesDataset(Dataset):
 
         # === SPLIT TRAIN / TEST ===
         T = len(self.data)
-        test_size = int(T * test_ratio)
-        split_idx = T - test_size
-
         self.indices = []
 
         if train:
@@ -154,6 +203,16 @@ class TimeSeriesDataset(Dataset):
         numerator = pd.to_numeric(numerator, errors="coerce").clip(lower=eps)
         denominator = pd.to_numeric(denominator, errors="coerce").clip(lower=eps)
         return np.log(numerator / denominator)
+
+    @staticmethod
+    def _robust_normalize_cube(cube, split_idx, eps=1e-12):
+        train_values = cube[:split_idx].reshape(-1, cube.shape[-1])
+        median = np.nanmedian(train_values, axis=0)
+        mad = np.nanmedian(np.abs(train_values - median), axis=0)
+        mad = np.where(np.isfinite(mad) & (mad > eps), mad, 1.0)
+        normalized = (cube - median.reshape(1, 1, -1)) / mad.reshape(1, 1, -1)
+        normalized = np.clip(normalized, -3.0, 3.0)
+        return np.nan_to_num(normalized, nan=0.0, posinf=3.0, neginf=-3.0).astype("float32")
 
     def _build_candle_features(self, df):
         mode = self.candle_feature_mode.lower()
@@ -214,6 +273,193 @@ class TimeSeriesDataset(Dataset):
             return work[["date", "cols", *feature_names]], feature_names
 
         raise ValueError(f"candle_feature_mode inválido: {self.candle_feature_mode}")
+
+    @staticmethod
+    def _rolling_rank_last(series, window):
+        return series.rolling(window, min_periods=1).apply(
+            lambda values: float(np.sum(values <= values[-1])) / max(len(values), 1), raw=True
+        )
+
+    @staticmethod
+    def _rolling_idxmax(series, window):
+        return series.rolling(window, min_periods=1).apply(
+            lambda values: float(np.argmax(values)) / max(len(values) - 1, 1), raw=True
+        )
+
+    @staticmethod
+    def _rolling_idxmin(series, window):
+        return series.rolling(window, min_periods=1).apply(
+            lambda values: float(np.argmin(values)) / max(len(values) - 1, 1), raw=True
+        )
+
+    @staticmethod
+    def _rolling_regression_features(series, window, eps=1e-12):
+        def beta_fn(values):
+            y = np.asarray(values, dtype=float)
+            x = np.arange(len(y), dtype=float)
+            x_centered = x - x.mean()
+            y_centered = y - np.nanmean(y)
+            denom = np.sum(x_centered ** 2)
+            if denom <= eps:
+                return 0.0
+            return float(np.nansum(x_centered * y_centered) / denom)
+
+        def rsqr_fn(values):
+            y = np.asarray(values, dtype=float)
+            if len(y) < 2 or np.nanstd(y) <= eps:
+                return 0.0
+            x = np.arange(len(y), dtype=float)
+            corr = np.corrcoef(x, y)[0, 1]
+            if not np.isfinite(corr):
+                return 0.0
+            return float(corr ** 2)
+
+        def resi_fn(values):
+            y = np.asarray(values, dtype=float)
+            x = np.arange(len(y), dtype=float)
+            x_centered = x - x.mean()
+            y_centered = y - np.nanmean(y)
+            denom = np.sum(x_centered ** 2)
+            if denom <= eps:
+                return 0.0
+            beta = np.nansum(x_centered * y_centered) / denom
+            alpha = np.nanmean(y) - beta * x.mean()
+            fitted_last = alpha + beta * x[-1]
+            return float(y[-1] - fitted_last)
+
+        beta = series.rolling(window, min_periods=2).apply(beta_fn, raw=True)
+        rsqr = series.rolling(window, min_periods=2).apply(rsqr_fn, raw=True)
+        resi = series.rolling(window, min_periods=2).apply(resi_fn, raw=True)
+        return beta, rsqr, resi
+
+    def _build_stock_factor_features(self, df):
+        mode = self.stock_factor_mode.lower()
+        if mode != "alpha158":
+            raise ValueError(f"stock_factor_mode inválido: {self.stock_factor_mode}")
+
+        required = ["abertura", "maxima", "minima", "data", "volume"]
+        missing = [col for col in required if col not in df.columns]
+        if missing:
+            raise ValueError(f"stock_factor_mode=alpha158 requer colunas OHLCV. Ausentes: {missing}")
+
+        frames = []
+        factor_names = None
+        for _, group in df.groupby("cols", sort=False):
+            factor_frame, names = self._build_alpha158_one_asset(group)
+            frames.append(factor_frame)
+            if factor_names is None:
+                factor_names = names
+
+        out = pd.concat(frames, ignore_index=True)
+        out[factor_names] = out[factor_names].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return out, factor_names
+
+    def _build_alpha158_one_asset(self, group, eps=1e-12):
+        group = group.sort_values("date").copy()
+        open_ = pd.to_numeric(group["abertura"], errors="coerce").ffill().bfill()
+        high = pd.to_numeric(group["maxima"], errors="coerce").ffill().bfill()
+        low = pd.to_numeric(group["minima"], errors="coerce").ffill().bfill()
+        close = pd.to_numeric(group["data"], errors="coerce").ffill().bfill()
+        volume = pd.to_numeric(group["volume"], errors="coerce").ffill().bfill().clip(lower=0.0)
+
+        if "volume_financeiro" in group.columns:
+            amount = pd.to_numeric(group["volume_financeiro"], errors="coerce").ffill().bfill()
+            vwap = amount / volume.replace(0.0, np.nan)
+            vwap = vwap.replace([np.inf, -np.inf], np.nan).ffill().bfill().fillna(close)
+        else:
+            vwap = close.copy()
+
+        denom_open = open_.replace(0.0, np.nan)
+        denom_close = close.replace(0.0, np.nan)
+        amplitude = (high - low).replace(0.0, np.nan)
+        max_oc = pd.concat([open_, close], axis=1).max(axis=1)
+        min_oc = pd.concat([open_, close], axis=1).min(axis=1)
+
+        out = pd.DataFrame({"date": group["date"].values, "cols": group["cols"].values})
+        names = []
+
+        base_features = {
+            "KMID": (close - open_) / (denom_open + eps),
+            "KLEN": (high - low) / (denom_open + eps),
+            "KMID2": (close - open_) / (amplitude + eps),
+            "KUP": (high - max_oc) / (denom_open + eps),
+            "KUP2": (high - max_oc) / (amplitude + eps),
+            "KLOW": (min_oc - low) / (denom_open + eps),
+            "KLOW2": (min_oc - low) / (amplitude + eps),
+            "KSFT": (2 * close - high - low) / (denom_open + eps),
+            "KSFT2": (2 * close - high - low) / (amplitude + eps),
+            "OPEN0": open_ / (denom_close + eps) - 1.0,
+            "HIGH0": high / (denom_close + eps) - 1.0,
+            "LOW0": low / (denom_close + eps) - 1.0,
+            "VWAP0": vwap / (denom_close + eps) - 1.0,
+        }
+        for name, values in base_features.items():
+            out[name] = values.values
+            names.append(name)
+
+        close_diff = close.diff()
+        close_abs_diff = close_diff.abs()
+        close_pos = close_diff.clip(lower=0.0)
+        close_neg = (-close_diff.clip(upper=0.0))
+        vol_diff = volume.diff()
+        vol_abs_diff = vol_diff.abs()
+        vol_pos = vol_diff.clip(lower=0.0)
+        vol_neg = (-vol_diff.clip(upper=0.0))
+        ret_ratio = close / close.shift(1)
+        vol_ratio_log = np.log(volume / volume.shift(1).replace(0.0, np.nan) + 1.0)
+        close_ret_abs_vol = close.pct_change().abs() * volume
+        log_volume = np.log1p(volume)
+
+        for window in self.stock_factor_windows:
+            beta, rsqr, resi = self._rolling_regression_features(close, window)
+            roll_high_max = high.rolling(window, min_periods=1).max()
+            roll_low_min = low.rolling(window, min_periods=1).min()
+            sump_denom = close_abs_diff.rolling(window, min_periods=1).sum() + eps
+            vsump_denom = vol_abs_diff.rolling(window, min_periods=1).sum() + eps
+
+            window_features = {
+                f"ROC{window}": close.shift(window) / (close + eps),
+                f"MA{window}": close.rolling(window, min_periods=1).mean() / (close + eps),
+                f"STD{window}": close.rolling(window, min_periods=1).std(ddof=0) / (close + eps),
+                f"BETA{window}": beta / (close + eps),
+                f"RSQR{window}": rsqr,
+                f"RESI{window}": resi / (close + eps),
+                f"MAX{window}": roll_high_max / (close + eps) - 1.0,
+                f"MIN{window}": roll_low_min / (close + eps) - 1.0,
+                f"QTLU{window}": close.rolling(window, min_periods=1).quantile(0.8) / (close + eps) - 1.0,
+                f"QTLD{window}": close.rolling(window, min_periods=1).quantile(0.2) / (close + eps) - 1.0,
+                f"RANK{window}": self._rolling_rank_last(close, window),
+                f"RSV{window}": (close - roll_low_min) / (roll_high_max - roll_low_min + eps),
+                f"IMAX{window}": self._rolling_idxmax(high, window),
+                f"IMIN{window}": self._rolling_idxmin(low, window),
+                f"IMXD{window}": self._rolling_idxmax(high, window) - self._rolling_idxmin(low, window),
+                f"CORR{window}": close.rolling(window, min_periods=2).corr(log_volume),
+                f"CORD{window}": ret_ratio.rolling(window, min_periods=2).corr(vol_ratio_log),
+                f"CNTP{window}": (close_diff > 0).astype(float).rolling(window, min_periods=1).mean(),
+                f"CNTN{window}": (close_diff < 0).astype(float).rolling(window, min_periods=1).mean(),
+                f"CNTD{window}": (close_diff > 0).astype(float).rolling(window, min_periods=1).mean()
+                              - (close_diff < 0).astype(float).rolling(window, min_periods=1).mean(),
+                f"SUMP{window}": close_pos.rolling(window, min_periods=1).sum() / sump_denom,
+                f"SUMN{window}": close_neg.rolling(window, min_periods=1).sum() / sump_denom,
+                f"SUMD{window}": (close_pos.rolling(window, min_periods=1).sum()
+                               - close_neg.rolling(window, min_periods=1).sum()) / sump_denom,
+                f"VMA{window}": volume.rolling(window, min_periods=1).mean() / (volume + eps),
+                f"VSTD{window}": volume.rolling(window, min_periods=1).std(ddof=0) / (volume + eps),
+                f"WVMA{window}": close_ret_abs_vol.rolling(window, min_periods=1).std(ddof=0)
+                               / (close_ret_abs_vol.rolling(window, min_periods=1).mean() + eps),
+                f"VSUMP{window}": vol_pos.rolling(window, min_periods=1).sum() / vsump_denom,
+                f"VSUMN{window}": vol_neg.rolling(window, min_periods=1).sum() / vsump_denom,
+                f"VSUMD{window}": (vol_pos.rolling(window, min_periods=1).sum()
+                                - vol_neg.rolling(window, min_periods=1).sum()) / vsump_denom,
+            }
+            for name, values in window_features.items():
+                out[name] = values.values
+                names.append(name)
+
+        if len(names) != 158:
+            raise RuntimeError(f"Alpha158 deveria gerar 158 fatores, mas gerou {len(names)}.")
+
+        return out, names
 
     def _infer_market_date_col(self, df):
         if self.market_date_col is not None:
@@ -340,7 +586,7 @@ class TimeSeriesDataset(Dataset):
         y = self.data[start + self.lookback: start + self.lookback + self.horizon]
 
         outputs = [x, y]
-        if self.use_candle_encoder:
+        if self.candle_data is not None:
             outputs.append(self.candle_data[start: start + self.lookback])
         if self.use_market_features:
             outputs.append(self.market_data[start: start + self.lookback])
