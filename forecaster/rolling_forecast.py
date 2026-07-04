@@ -25,6 +25,18 @@ def _resolve_model_name(model):
     return getattr(model, "forecast_model_name", model.__class__.__name__)
 
 
+def _resolve_model_attr(model, attr_name, default=None):
+    """Recupera atributo do modelo base, ignorando wrappers."""
+    if hasattr(model, attr_name):
+        return getattr(model, attr_name)
+
+    inner_model = getattr(model, "model", None)
+    if inner_model is not None:
+        return _resolve_model_attr(inner_model, attr_name, default)
+
+    return default
+
+
 def _resolve_temporal_labels(dataset, target_positions, origin_pos):
     """Mapeia posições internas para os rótulos reais da coluna date."""
     date_index = getattr(dataset, "date_index", None)
@@ -94,6 +106,9 @@ def run_one_step_rolling_forecast(
     device = next(model.parameters()).device
     model.eval()
 
+    is_horizon_scalar = bool(_resolve_model_attr(model, "is_horizon_scalar_forecast", False))
+    output_horizon = int(_resolve_model_attr(model, "output_horizon", getattr(dataset, "horizon", 1)))
+
     with torch.no_grad():
         for idx in range(len(dataset)):
             sample = dataset[idx]
@@ -102,6 +117,7 @@ def run_one_step_rolling_forecast(
             seq_x, _, seq_candle, seq_market = _split_optional_inputs(sample)
 
             global_start = dataset.indices[idx]
+            origin_pos = global_start + dataset.lookback - 1
 
             batch_x = seq_x.unsqueeze(0).to(device)
             forward_kwargs = {}
@@ -114,11 +130,18 @@ def run_one_step_rolling_forecast(
             if isinstance(pred, tuple):
                 pred = pred[0]
             pred_np = pred.squeeze(0).cpu().numpy()
+            if pred_np.ndim == 1:
+                pred_np = pred_np.reshape(1, -1)
 
             pred_df = pd.DataFrame(pred_np, columns=dataset.feature_columns)
 
-            target_pos = list(range(global_start + dataset.lookback, global_start + dataset.lookback + len(pred_df)))
-            origin_pos = global_start + dataset.lookback - 1
+            if is_horizon_scalar and len(pred_df) == 1:
+                target_pos = [origin_pos + output_horizon]
+                pred_df["h"] = [output_horizon]
+            else:
+                target_pos = list(range(global_start + dataset.lookback, global_start + dataset.lookback + len(pred_df)))
+                pred_df["h"] = list(range(1, len(pred_df) + 1))
+
             origin_step, target_steps = _resolve_temporal_labels(dataset, target_pos, origin_pos)
 
             # Backward compatibility: ranking_backtest lê ``step`` como alvo previsto.
