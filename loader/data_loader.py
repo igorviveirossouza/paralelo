@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -5,6 +7,7 @@ import pandas as pd
 
 
 DEFAULT_CANDLE_COLS = ["abertura", "maxima", "minima", "data", "volume"]
+DEFAULT_MARKET_WINDOWS = [5, 10, 20, 30, 60]
 
 
 class TimeSeriesDataset(Dataset):
@@ -16,11 +19,17 @@ class TimeSeriesDataset(Dataset):
         x:        [lookback, N]
         y:        [pred_len, N]
         candle_x: [lookback, N, F]
+
+    Quando use_market_features=True, retorna também market_x:
+        market_x: [lookback, K]
     """
     def __init__(self, data_path, lookback=96, pred_len=24, stride=1,
                  cols=None, train=True, test_ratio=0.2,
                  use_candle_encoder=False, candle_cols=None,
-                 candle_feature_mode="ohlcv_relative"):
+                 candle_feature_mode="ohlcv_relative",
+                 use_market_features=False, market_feature_files=None,
+                 market_feature_mode="master", market_windows=None,
+                 market_date_col=None):
         super().__init__()
         self.lookback = lookback
         self.horizon = pred_len
@@ -32,6 +41,13 @@ class TimeSeriesDataset(Dataset):
         self.candle_feature_mode = candle_feature_mode
         self.candle_feature_names = []
         self.candle_data = None
+        self.use_market_features = bool(use_market_features)
+        self.market_feature_files = market_feature_files or []
+        self.market_feature_mode = market_feature_mode
+        self.market_windows = market_windows or DEFAULT_MARKET_WINDOWS
+        self.market_date_col = market_date_col
+        self.market_feature_names = []
+        self.market_data = None
         self.date_index = []
 
         df = pd.read_csv(data_path)
@@ -43,6 +59,7 @@ class TimeSeriesDataset(Dataset):
             raise ValueError(f"Colunas obrigatórias ausentes no CSV: {sorted(missing)}")
 
         df = df.copy()
+        df["date"] = self._normalize_dates(df["date"])
         df["data"] = pd.to_numeric(df["data"], errors="coerce")
         df = df.sort_values(["cols", "date"])
 
@@ -66,6 +83,17 @@ class TimeSeriesDataset(Dataset):
                 f"Shape OHLCV: {candle_np.shape}"
             )
 
+        market_np = None
+        if self.use_market_features:
+            market_frame, self.market_feature_names = self._build_market_features(df_pivot.index)
+            market_frame = market_frame.reindex(df_pivot.index)
+            market_frame = market_frame.ffill().bfill().fillna(0.0)
+            market_np = market_frame.values.astype("float32")  # [T, K]
+            print(
+                f"✅ Features de mercado ativas | K={len(self.market_feature_names)} | "
+                f"Shape market: {market_np.shape}"
+            )
+
         if cols is None:
             # === MULTIVARIATE ===
             self.data = torch.tensor(df_pivot.values, dtype=torch.float32)  # [T, N]
@@ -85,6 +113,9 @@ class TimeSeriesDataset(Dataset):
                 self.candle_data = torch.tensor(candle_np[:, col_idx:col_idx + 1, :], dtype=torch.float32)
             self.mode = "univariate"
             print(f"✅ Modo Univariate - Ticker: {cols} | Shape: {self.data.shape}")
+
+        if market_np is not None:
+            self.market_data = torch.tensor(market_np, dtype=torch.float32)
 
         # === SPLIT TRAIN / TEST ===
         T = len(self.data)
@@ -107,6 +138,16 @@ class TimeSeriesDataset(Dataset):
             print(f"✅ Test split | amostras: {len(self.indices)} | início global ≈ {split_idx}")
 
         print(f"Total de amostras válidas ({'train' if train else 'test'}): {len(self.indices)}")
+
+    @staticmethod
+    def _normalize_dates(values):
+        series = pd.Series(values)
+        parsed = pd.to_datetime(series, errors="coerce")
+        out = series.astype(str)
+        ok = parsed.notna()
+        if ok.any():
+            out.loc[ok] = parsed.loc[ok].dt.strftime("%Y-%m-%d")
+        return out.tolist()
 
     @staticmethod
     def _safe_log_ratio(numerator, denominator, eps=1e-8):
@@ -174,6 +215,122 @@ class TimeSeriesDataset(Dataset):
 
         raise ValueError(f"candle_feature_mode inválido: {self.candle_feature_mode}")
 
+    def _infer_market_date_col(self, df):
+        if self.market_date_col is not None:
+            if self.market_date_col not in df.columns:
+                raise ValueError(f"Coluna de data '{self.market_date_col}' ausente no arquivo de mercado.")
+            return self.market_date_col
+        for col in ["date_pregao", "date", "datetime"]:
+            if col in df.columns:
+                return col
+        raise ValueError("Arquivo de mercado precisa conter date_pregao, date ou datetime.")
+
+    def _build_market_features(self, target_index):
+        if not self.market_feature_files:
+            raise ValueError("use_market_features=True requer pelo menos um arquivo em market_feature_files.")
+
+        frames = []
+        all_names = []
+        for file_path in self.market_feature_files:
+            frame, names = self._build_market_features_one(file_path)
+            frames.append(frame)
+            all_names.extend(names)
+
+        market = pd.concat(frames, axis=1)
+        market = market.replace([np.inf, -np.inf], np.nan)
+        market = market.sort_index()
+        target_index = pd.Index(target_index, name="date")
+        market = market.reindex(target_index).ffill().bfill().fillna(0.0)
+        return market, all_names
+
+    def _build_market_features_one(self, file_path):
+        mode = self.market_feature_mode.lower()
+        path = Path(file_path)
+        stem = path.stem
+        df = pd.read_csv(path)
+        date_col = self._infer_market_date_col(df)
+        df = df.copy()
+        df["date"] = self._normalize_dates(df[date_col])
+        df = df.sort_values("date").drop_duplicates("date", keep="last")
+
+        if mode == "raw":
+            return self._build_raw_market_features(df, stem)
+
+        if mode == "master":
+            features = self._build_master_market_features(df, stem)
+            if features is not None:
+                return features
+            return self._build_raw_market_features(df, stem)
+
+        raise ValueError(f"market_feature_mode inválido: {self.market_feature_mode}")
+
+    def _build_raw_market_features(self, df, stem):
+        numeric_cols = []
+        for col in df.columns:
+            if col in {"date", "date_pregao", "datetime"}:
+                continue
+            values = pd.to_numeric(df[col], errors="coerce")
+            if values.notna().any():
+                numeric_cols.append(col)
+
+        if not numeric_cols:
+            raise ValueError("Arquivo de features de mercado não possui colunas numéricas utilizáveis.")
+
+        out = pd.DataFrame(index=pd.Index(df["date"], name="date"))
+        names = []
+        for col in numeric_cols:
+            name = f"{stem}__{col}"
+            out[name] = pd.to_numeric(df[col], errors="coerce")
+            names.append(name)
+
+        out = out.replace([np.inf, -np.inf], np.nan).ffill().bfill().fillna(0.0)
+        return out, names
+
+    def _build_master_market_features(self, df, stem):
+        close_cols = [col for col in df.columns if col.endswith("_Close")]
+        if not close_cols:
+            close_cols = [col for col in df.columns if col.endswith("_Adj Close")]
+        if not close_cols:
+            return None
+
+        out = pd.DataFrame(index=pd.Index(df["date"], name="date"))
+        names = []
+        for close_col in close_cols:
+            if close_col.endswith("_Adj Close"):
+                prefix = close_col[: -len("_Adj Close")]
+            else:
+                prefix = close_col[: -len("_Close")]
+
+            close = pd.to_numeric(df[close_col], errors="coerce").ffill().bfill()
+            ret = close / close.shift(1) - 1.0
+
+            name = f"{stem}__{prefix}_ret_1"
+            out[name] = ret
+            names.append(name)
+
+            volume_col = f"{prefix}_Volume"
+            volume = None
+            if volume_col in df.columns:
+                volume = pd.to_numeric(df[volume_col], errors="coerce").ffill().bfill()
+                volume_denom = volume.replace(0.0, np.nan)
+
+            for window in self.market_windows:
+                ret_mean_name = f"{stem}__{prefix}_ret_mean_{window}"
+                ret_std_name = f"{stem}__{prefix}_ret_std_{window}"
+                out[ret_mean_name] = ret.rolling(window, min_periods=1).mean()
+                out[ret_std_name] = ret.rolling(window, min_periods=1).std(ddof=0)
+                names.extend([ret_mean_name, ret_std_name])
+
+                if volume is not None:
+                    vol_mean_name = f"{stem}__{prefix}_volume_mean_ratio_{window}"
+                    vol_std_name = f"{stem}__{prefix}_volume_std_ratio_{window}"
+                    out[vol_mean_name] = volume.rolling(window, min_periods=1).mean() / volume_denom
+                    out[vol_std_name] = volume.rolling(window, min_periods=1).std(ddof=0) / volume_denom
+                    names.extend([vol_mean_name, vol_std_name])
+
+        out = out.replace([np.inf, -np.inf], np.nan).ffill().bfill().fillna(0.0)
+        return out, names
+
     def __len__(self):
         return len(self.indices)
 
@@ -182,11 +339,13 @@ class TimeSeriesDataset(Dataset):
         x = self.data[start: start + self.lookback]
         y = self.data[start + self.lookback: start + self.lookback + self.horizon]
 
+        outputs = [x, y]
         if self.use_candle_encoder:
-            candle_x = self.candle_data[start: start + self.lookback]
-            return x, y, candle_x
+            outputs.append(self.candle_data[start: start + self.lookback])
+        if self.use_market_features:
+            outputs.append(self.market_data[start: start + self.lookback])
 
-        return x, y
+        return tuple(outputs)
 
     # Compatibilidade com rolling_forecast.py
     def get_metadata_window(self, idx):
