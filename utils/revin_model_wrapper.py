@@ -12,12 +12,9 @@ class RevINModelWrapper(nn.Module):
         self.revin = RevIN(enc_in, affine=affine)
         self.loss_fn = get_loss(loss_name, **(loss_kwargs or {}))
 
-    def forward(self, x, y=None, return_loss=False, candle_x=None):
+    def forward(self, x, y=None, return_loss=False, **extra_inputs):
         x_norm = self.revin(x, mode='norm')
-        forward_kwargs = {}
-        if candle_x is not None:
-            forward_kwargs["candle_x"] = candle_x
-        output = self.model(x_norm, y=None, return_loss=False, **forward_kwargs)
+        output = self.model(x_norm, y=None, return_loss=False, **extra_inputs)
         output = self.revin(output, mode='denorm')
         if return_loss and y is not None:
             loss = self.loss_fn(output, y[:, -output.size(1):, :])
