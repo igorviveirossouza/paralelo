@@ -16,23 +16,21 @@ class TimeSeriesDataset(Dataset):
     Dataset flexível para o projeto paralelo.
     Suporta modo Multivariate e Univariate + split Train/Test.
 
-    Quando há features por papel, retorna também candle_x:
+    x/y vêm de data_path. As features por papel podem vir do próprio data_path
+    ou de feature_source_path, útil quando o alvo é retorno/log-retorno, mas os
+    fatores devem ser calculados sobre OHLCV/preço.
+
+    Retorno:
         x:        [lookback, N]
         y:        [pred_len, N]
-        candle_x: [lookback, N, F]
-
-    candle_x pode conter:
-        - fatores Alpha158-like por papel;
-        - OHLCV relativo opcional;
-        - ou ambos concatenados.
-
-    Quando use_market_features=True, retorna também market_x:
-        market_x: [lookback, K]
+        candle_x: [lookback, N, F] opcional, com fatores e/ou OHLCV relativo
+        market_x: [lookback, K] opcional
     """
     def __init__(self, data_path, lookback=96, pred_len=24, stride=1,
                  cols=None, train=True, test_ratio=0.2,
                  use_candle_encoder=False, candle_cols=None,
                  candle_feature_mode="ohlcv_relative",
+                 feature_source_path=None,
                  use_market_features=False, market_feature_files=None,
                  market_feature_mode="master", market_windows=None,
                  market_date_col=None,
@@ -42,13 +40,14 @@ class TimeSeriesDataset(Dataset):
         self.lookback = lookback
         self.horizon = pred_len
         self.stride = stride
-        self.cols = cols          # None = multivariate, str = ticker específico
+        self.cols = cols
         self.train = train
         self.raw_candle_enabled = bool(use_candle_encoder)
         self.use_stock_factors = bool(use_stock_factors)
         self.use_candle_encoder = self.raw_candle_enabled or self.use_stock_factors
         self.candle_cols = candle_cols or DEFAULT_CANDLE_COLS
         self.candle_feature_mode = candle_feature_mode
+        self.feature_source_path = feature_source_path
         self.candle_feature_names = []
         self.stock_factor_names = []
         self.candle_data = None
@@ -64,18 +63,8 @@ class TimeSeriesDataset(Dataset):
         self.stock_factor_normalize = bool(stock_factor_normalize)
         self.date_index = []
 
-        df = pd.read_csv(data_path)
+        df = self._load_main_data(data_path)
         print("Colunas originais:", df.columns.tolist())
-
-        required = {"date", "cols", "data"}
-        missing = required.difference(df.columns)
-        if missing:
-            raise ValueError(f"Colunas obrigatórias ausentes no CSV: {sorted(missing)}")
-
-        df = df.copy()
-        df["date"] = self._normalize_dates(df["date"])
-        df["data"] = pd.to_numeric(df["data"], errors="coerce")
-        df = df.sort_values(["cols", "date"])
 
         df_pivot = df.pivot(index="date", columns="cols", values="data")
         df_pivot = df_pivot.ffill().bfill().fillna(0.0)
@@ -85,9 +74,15 @@ class TimeSeriesDataset(Dataset):
         test_size = int(T_all * test_ratio)
         split_idx = T_all - test_size
 
+        feature_df = df
+        if self.use_candle_encoder and self.feature_source_path is not None:
+            feature_df = self._load_main_data(self.feature_source_path)
+            print(f"✅ Fonte OHLCV/fatores separada: {self.feature_source_path}")
+            print("Colunas da fonte OHLCV/fatores:", feature_df.columns.tolist())
+
         stock_factor_np = None
         if self.use_stock_factors:
-            stock_factor_frame, self.stock_factor_names = self._build_stock_factor_features(df)
+            stock_factor_frame, self.stock_factor_names = self._build_stock_factor_features(feature_df)
             factor_pivots = []
             for feature_name in self.stock_factor_names:
                 feature_pivot = stock_factor_frame.pivot(index="date", columns="cols", values=feature_name)
@@ -95,7 +90,7 @@ class TimeSeriesDataset(Dataset):
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 factor_pivots.append(feature_pivot.values)
 
-            stock_factor_np = np.stack(factor_pivots, axis=-1).astype("float32")  # [T, N, F]
+            stock_factor_np = np.stack(factor_pivots, axis=-1).astype("float32")
             if self.stock_factor_normalize:
                 stock_factor_np = self._robust_normalize_cube(stock_factor_np, split_idx)
             print(
@@ -106,7 +101,7 @@ class TimeSeriesDataset(Dataset):
         candle_np = None
         raw_candle_feature_names = []
         if self.raw_candle_enabled:
-            candle_frame, raw_candle_feature_names = self._build_candle_features(df)
+            candle_frame, raw_candle_feature_names = self._build_candle_features(feature_df)
             candle_pivots = []
             for feature_name in raw_candle_feature_names:
                 feature_pivot = candle_frame.pivot(index="date", columns="cols", values=feature_name)
@@ -114,7 +109,7 @@ class TimeSeriesDataset(Dataset):
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 candle_pivots.append(feature_pivot.values)
 
-            candle_np = np.stack(candle_pivots, axis=-1).astype("float32")  # [T, N, F]
+            candle_np = np.stack(candle_pivots, axis=-1).astype("float32")
             print(
                 f"✅ Candle Encoder ativo | features: {raw_candle_feature_names} | "
                 f"Shape OHLCV: {candle_np.shape}"
@@ -140,26 +135,24 @@ class TimeSeriesDataset(Dataset):
             market_frame, self.market_feature_names = self._build_market_features(df_pivot.index)
             market_frame = market_frame.reindex(df_pivot.index)
             market_frame = market_frame.ffill().bfill().fillna(0.0)
-            market_np = market_frame.values.astype("float32")  # [T, K]
+            market_np = market_frame.values.astype("float32")
             print(
                 f"✅ Features de mercado ativas | K={len(self.market_feature_names)} | "
                 f"Shape market: {market_np.shape}"
             )
 
         if cols is None:
-            # === MULTIVARIATE ===
-            self.data = torch.tensor(df_pivot.values, dtype=torch.float32)  # [T, N]
+            self.data = torch.tensor(df_pivot.values, dtype=torch.float32)
             self.feature_columns = df_pivot.columns.tolist()
             if per_stock_np is not None:
                 self.candle_data = torch.tensor(per_stock_np, dtype=torch.float32)
             self.mode = "multivariate"
             print(f"✅ Modo Multivariate - {len(self.feature_columns)} séries | Shape: {self.data.shape}")
         else:
-            # === UNIVARIATE ===
             if cols not in df_pivot.columns:
                 raise ValueError(f"Coluna '{cols}' não encontrada. Disponíveis: {list(df_pivot.columns)}")
             col_idx = df_pivot.columns.get_loc(cols)
-            self.data = torch.tensor(df_pivot[cols].values, dtype=torch.float32).unsqueeze(1)  # [T, 1]
+            self.data = torch.tensor(df_pivot[cols].values, dtype=torch.float32).unsqueeze(1)
             self.feature_columns = [cols]
             if per_stock_np is not None:
                 self.candle_data = torch.tensor(per_stock_np[:, col_idx:col_idx + 1, :], dtype=torch.float32)
@@ -169,24 +162,32 @@ class TimeSeriesDataset(Dataset):
         if market_np is not None:
             self.market_data = torch.tensor(market_np, dtype=torch.float32)
 
-        # === SPLIT TRAIN / TEST ===
         T = len(self.data)
         self.indices = []
 
         if train:
-            # Janelas completamente dentro do treino
             max_start = split_idx - lookback - pred_len
             for start in range(0, max(0, max_start) + 1, stride):
                 self.indices.append(start)
             print(f"✅ Train split | amostras: {len(self.indices)} | split_idx={split_idx}")
         else:
-            # Janelas que começam a partir do split (usam dados de teste)
             start_min = max(0, split_idx - lookback)
             for start in range(start_min, T - lookback - pred_len + 1, stride):
                 self.indices.append(start)
             print(f"✅ Test split | amostras: {len(self.indices)} | início global ≈ {split_idx}")
 
         print(f"Total de amostras válidas ({'train' if train else 'test'}): {len(self.indices)}")
+
+    def _load_main_data(self, data_path):
+        df = pd.read_csv(data_path)
+        required = {"date", "cols", "data"}
+        missing = required.difference(df.columns)
+        if missing:
+            raise ValueError(f"Colunas obrigatórias ausentes no CSV {data_path}: {sorted(missing)}")
+        df = df.copy()
+        df["date"] = self._normalize_dates(df["date"])
+        df["data"] = pd.to_numeric(df["data"], errors="coerce")
+        return df.sort_values(["cols", "date"])
 
     @staticmethod
     def _normalize_dates(values):
@@ -593,6 +594,5 @@ class TimeSeriesDataset(Dataset):
 
         return tuple(outputs)
 
-    # Compatibilidade com rolling_forecast.py
     def get_metadata_window(self, idx):
         return None
