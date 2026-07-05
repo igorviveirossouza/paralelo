@@ -272,6 +272,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--output_dir', type=str, default='previsoes')
     parser.add_argument('--extra_dirs', type=str, nargs='*', default=[])
+    parser.add_argument('--duplicate_policy', type=str, default='error', choices=['error', 'last'], help='Tratamento de duplicatas (date, cols): error ou last.')
     parser.add_argument('--revin', type=str2bool, default=False, help='Ativa RevIN: true/false')
     parser.add_argument("--revin_affine", type=str2bool, default=False)
     parser.add_argument('--model_name', type=str, default='AttentionSoloNaive', choices=list(MODEL_REGISTRY.keys()))
@@ -302,6 +303,7 @@ def main():
     print(f"  Base de dados: {args.base_de_dados}")
     print(f"  Modelo: {args.model_name}")
     print(f"  Embedding: {args.embedding_type}")
+    print(f"  Duplicate policy: {args.duplicate_policy}")
     print(f"  RevIN: {args.revin}")
     print(f"  RevIN affine: {args.revin_affine}")
     print(f"  Candle Encoder Fusion: {apply_candle_fusion}")
@@ -355,6 +357,7 @@ def main():
         stride=1,
         cols=args.cols,
         test_ratio=args.test_ratio,
+        duplicate_policy=args.duplicate_policy,
         use_candle_encoder=args.use_candle_encoder,
         candle_cols=args.candle_cols,
         candle_feature_mode=args.candle_feature_mode,
