@@ -16,7 +16,6 @@ export MPLCONFIGDIR="/tmp/${USER}-mpl"
 cd "$PARALELO_ROOT"
 mkdir -p logs
 
-# Configuração geral
 EPOCHS="${EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 TEST_RATIO="${TEST_RATIO:-0.2}"
@@ -24,6 +23,7 @@ LOSS_NAME="${LOSS_NAME:-mse}"
 MAX_ASSETS="${MAX_ASSETS:-5}"
 ONLY_POSITIVE_PRED="${ONLY_POSITIVE_PRED:-true}"
 ANNUAL_RF="${ANNUAL_RF:-0.043}"
+DUPLICATE_POLICY="${DUPLICATE_POLICY:-error}"
 
 FORECAST_ROOT="${FORECAST_ROOT:-previsoes/master_tfb_experimento}"
 SIM_ROOT="${SIM_ROOT:-simulacoes/master_tfb_experimento}"
@@ -32,19 +32,14 @@ MARKET_FEATURE_FILES_STR="${MARKET_FEATURE_FILES:-indices.csv}"
 read -r -a MARKET_FEATURE_FILES_ARR <<< "$MARKET_FEATURE_FILES_STR"
 
 LOOKBACKS=(32 104 246)
-# No MASTER fiel, pred_len é horizonte econômico h e deve coincidir com a janela k.
 PRED_LENS=(1 5 10 15 20 24)
 
-# tipo_saida:data_name_tfb:price_dataset_paralelo:model_output
 DATASETS=(
   "retornos_simples:b3_returns.csv:b3_daily_tfb.csv:returns"
   "log_retornos:b3_log_returns.csv:b3_daily_tfb.csv:log_returns"
   "prices:b3_daily_tfb.csv:b3_daily_tfb.csv:prices"
 )
 
-# Comparação solicitada:
-# full       = Alpha158-like + OHLCV relativo + market_x
-# ohlcv_only = OHLCV relativo + market_x, sem Alpha158-like
 VARIANTS=("full" "ohlcv_only")
 
 N_DATASETS=${#DATASETS[@]}
@@ -109,7 +104,6 @@ esac
 
 DATA_STEM="${DATA_NAME_TFB%.csv}"
 PRED_DIR="${FORECAST_ROOT}/${DATA_STEM}/MASTER/${VARIANT_DIR}/lookback_${LOOKBACK}/pred_len_${PRED_LEN}/loss_${LOSS_NAME}"
-
 RUN_PREFIX="${DATA_STEM}__${VARIANT_DIR}__lb${LOOKBACK}__h${PRED_LEN}__loss${LOSS_NAME}"
 RUN_NAME="${RUN_PREFIX}__k${REBALANCE_K}__${MODEL_OUTPUT}"
 
@@ -125,6 +119,7 @@ Variant:                 $VARIANT_DIR
 Lookback:                $LOOKBACK
 Horizonte h / k:         $PRED_LEN
 Target mode:             $MASTER_TARGET_MODE
+Duplicate policy:        $DUPLICATE_POLICY
 Loss:                    $LOSS_NAME
 Forecast dir:            $PRED_DIR
 Sim root:                $SIM_ROOT
@@ -144,6 +139,7 @@ EOF
   --loss_name "$LOSS_NAME" \
   --output_dir "$FORECAST_ROOT" \
   --extra_dirs "$VARIANT_DIR" "lookback_${LOOKBACK}" "pred_len_${PRED_LEN}" "loss_${LOSS_NAME}" \
+  --duplicate_policy "$DUPLICATE_POLICY" \
   --master_target_mode "$MASTER_TARGET_MODE" \
   --use_stock_factors "$USE_STOCK_FACTORS" \
   --stock_factor_mode alpha158 \
