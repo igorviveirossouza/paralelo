@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import re
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -227,12 +227,28 @@ class TimeSeriesDataset(Dataset):
     @staticmethod
     def _normalize_dates(values):
         series = pd.Series(values)
-        parsed = pd.to_datetime(series, errors="coerce")
-        out = series.astype(str)
-        ok = parsed.notna()
-        if ok.any():
-            out.loc[ok] = parsed.loc[ok].dt.strftime("%Y-%m-%d")
-        return out.tolist()
+
+        def normalize_one(value):
+            if pd.isna(value):
+                return value
+
+            text = str(value).strip()
+            if text == "":
+                return text
+
+            # Preserva índices numéricos de pregão: 1, 2, 3, ...
+            if re.fullmatch(r"\d+(\.0)?", text):
+                return str(int(float(text)))
+
+            # Só converte datas textuais claras: YYYY-MM-DD, DD/MM/YYYY, etc.
+            if any(sep in text for sep in ["-", "/", ":"]):
+                parsed = pd.to_datetime(text, errors="coerce")
+                if pd.notna(parsed):
+                    return parsed.strftime("%Y-%m-%d")
+
+            return text
+
+        return [normalize_one(value) for value in series]
 
     @staticmethod
     def _safe_log_ratio(numerator, denominator, eps=1e-8):

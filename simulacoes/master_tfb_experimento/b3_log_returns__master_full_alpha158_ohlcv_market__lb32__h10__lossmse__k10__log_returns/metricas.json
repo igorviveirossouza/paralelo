@@ -1,0 +1,25 @@
+{
+  "params": {
+    "pred_dir": "previsoes/master_tfb_experimento/b3_log_returns/MASTER/master_full_alpha158_ohlcv_market/lookback_32/pred_len_10/loss_mse",
+    "price_path": "data/b3_daily_tfb.csv",
+    "model_output": "log_returns",
+    "rebalance_k": 10,
+    "max_assets": 5,
+    "horizon": 10,
+    "only_positive_pred": true,
+    "returns_mode": "cumulative",
+    "annual_rf": 0.043
+  },
+  "metrics": {
+    "total_return": 81208.19932098864,
+    "annual_return": 160.9281495155045,
+    "annual_vol": 2.6720694756581156,
+    "sharpe": 60.20994251127373,
+    "max_drawdown": -0.6399236802872688,
+    "mean_precision_positive": 0.5256410256410257,
+    "mean_spearman_ic": 0.21204690831556508,
+    "icir": 0.7747303894488806,
+    "mean_n_assets": 4.160714285714286,
+    "n_periods": 56
+  }
+}

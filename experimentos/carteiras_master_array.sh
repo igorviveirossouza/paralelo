@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p medusas_shr
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-107%2
+#SBATCH --array=0-107%8
 #SBATCH --time=48:00:00
 #SBATCH --job-name=master_tfb_cart
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/master-tfb-cart-%A_%a.out
@@ -128,7 +128,7 @@ Market feature files:    ${MARKET_FEATURE_FILES_ARR[*]}
 ============================================================
 EOF
 
-"$PYTHON_BIN" main_test_safe_dates.py \
+"$PYTHON_BIN" main_test.py \
   --model_name MASTER \
   --base_de_dados "$DATA_NAME_TFB" \
   --lookback "$LOOKBACK" \
