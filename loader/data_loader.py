@@ -66,7 +66,7 @@ class TimeSeriesDataset(Dataset):
         df = self._load_main_data(data_path)
         print("Colunas originais:", df.columns.tolist())
 
-        df_pivot = df.pivot(index="date", columns="cols", values="data")
+        df_pivot = df.pivot_table(index="date", columns="cols", values="data", aggfunc="last")
         df_pivot = df_pivot.ffill().bfill().fillna(0.0)
         self.date_index = df_pivot.index.tolist()
 
@@ -85,7 +85,9 @@ class TimeSeriesDataset(Dataset):
             stock_factor_frame, self.stock_factor_names = self._build_stock_factor_features(feature_df)
             factor_pivots = []
             for feature_name in self.stock_factor_names:
-                feature_pivot = stock_factor_frame.pivot(index="date", columns="cols", values=feature_name)
+                feature_pivot = stock_factor_frame.pivot_table(
+                    index="date", columns="cols", values=feature_name, aggfunc="last"
+                )
                 feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 factor_pivots.append(feature_pivot.values)
@@ -104,7 +106,9 @@ class TimeSeriesDataset(Dataset):
             candle_frame, raw_candle_feature_names = self._build_candle_features(feature_df)
             candle_pivots = []
             for feature_name in raw_candle_feature_names:
-                feature_pivot = candle_frame.pivot(index="date", columns="cols", values=feature_name)
+                feature_pivot = candle_frame.pivot_table(
+                    index="date", columns="cols", values=feature_name, aggfunc="last"
+                )
                 feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 candle_pivots.append(feature_pivot.values)
@@ -184,10 +188,28 @@ class TimeSeriesDataset(Dataset):
         missing = required.difference(df.columns)
         if missing:
             raise ValueError(f"Colunas obrigatórias ausentes no CSV {data_path}: {sorted(missing)}")
+
         df = df.copy()
+        df = df.dropna(subset=["date", "cols"])
+        df["_row_order"] = np.arange(len(df))
         df["date"] = self._normalize_dates(df["date"])
+        df["cols"] = df["cols"].astype(str)
         df["data"] = pd.to_numeric(df["data"], errors="coerce")
-        return df.sort_values(["cols", "date"])
+
+        duplicated_rows = int(df.duplicated(["date", "cols"], keep=False).sum())
+        if duplicated_rows > 0:
+            print(
+                f"⚠️ {data_path}: {duplicated_rows} linhas duplicadas em (date, cols). "
+                "Mantendo a última ocorrência."
+            )
+
+        df = (
+            df.sort_values(["cols", "date", "_row_order"])
+            .drop_duplicates(["date", "cols"], keep="last")
+            .drop(columns=["_row_order"])
+            .sort_values(["cols", "date"])
+        )
+        return df
 
     @staticmethod
     def _normalize_dates(values):
