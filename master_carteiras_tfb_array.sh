@@ -128,7 +128,7 @@ Market feature files:    ${MARKET_FEATURE_FILES_ARR[*]}
 ============================================================
 EOF
 
-"$PYTHON_BIN" main_test.py \
+"$PYTHON_BIN" main_test_safe_dates.py \
   --model_name MASTER \
   --base_de_dados "$DATA_NAME_TFB" \
   --lookback "$LOOKBACK" \
