@@ -30,7 +30,7 @@ class TimeSeriesDataset(Dataset):
                  cols=None, train=True, test_ratio=0.2,
                  use_candle_encoder=False, candle_cols=None,
                  candle_feature_mode="ohlcv_relative",
-                 feature_source_path=None,
+                 feature_source_path=None, duplicate_policy="error",
                  use_market_features=False, market_feature_files=None,
                  market_feature_mode="master", market_windows=None,
                  market_date_col=None,
@@ -42,6 +42,7 @@ class TimeSeriesDataset(Dataset):
         self.stride = stride
         self.cols = cols
         self.train = train
+        self.duplicate_policy = duplicate_policy
         self.raw_candle_enabled = bool(use_candle_encoder)
         self.use_stock_factors = bool(use_stock_factors)
         self.use_candle_encoder = self.raw_candle_enabled or self.use_stock_factors
@@ -66,7 +67,7 @@ class TimeSeriesDataset(Dataset):
         df = self._load_main_data(data_path)
         print("Colunas originais:", df.columns.tolist())
 
-        df_pivot = df.pivot_table(index="date", columns="cols", values="data", aggfunc="last")
+        df_pivot = df.pivot(index="date", columns="cols", values="data")
         df_pivot = df_pivot.ffill().bfill().fillna(0.0)
         self.date_index = df_pivot.index.tolist()
 
@@ -85,9 +86,7 @@ class TimeSeriesDataset(Dataset):
             stock_factor_frame, self.stock_factor_names = self._build_stock_factor_features(feature_df)
             factor_pivots = []
             for feature_name in self.stock_factor_names:
-                feature_pivot = stock_factor_frame.pivot_table(
-                    index="date", columns="cols", values=feature_name, aggfunc="last"
-                )
+                feature_pivot = stock_factor_frame.pivot(index="date", columns="cols", values=feature_name)
                 feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 factor_pivots.append(feature_pivot.values)
@@ -106,9 +105,7 @@ class TimeSeriesDataset(Dataset):
             candle_frame, raw_candle_feature_names = self._build_candle_features(feature_df)
             candle_pivots = []
             for feature_name in raw_candle_feature_names:
-                feature_pivot = candle_frame.pivot_table(
-                    index="date", columns="cols", values=feature_name, aggfunc="last"
-                )
+                feature_pivot = candle_frame.pivot(index="date", columns="cols", values=feature_name)
                 feature_pivot = feature_pivot.reindex(index=df_pivot.index, columns=df_pivot.columns)
                 feature_pivot = feature_pivot.ffill().bfill().fillna(0.0)
                 candle_pivots.append(feature_pivot.values)
@@ -198,14 +195,30 @@ class TimeSeriesDataset(Dataset):
 
         duplicated_rows = int(df.duplicated(["date", "cols"], keep=False).sum())
         if duplicated_rows > 0:
-            print(
-                f"⚠️ {data_path}: {duplicated_rows} linhas duplicadas em (date, cols). "
-                "Mantendo a última ocorrência."
+            dup_examples = (
+                df.loc[df.duplicated(["date", "cols"], keep=False), ["date", "cols"]]
+                .value_counts()
+                .head(20)
+                .reset_index(name="n")
             )
+            if self.duplicate_policy == "error":
+                raise ValueError(
+                    f"{data_path}: {duplicated_rows} linhas duplicadas em (date, cols).\n"
+                    "Isso indica problema na preparação/interpolação da base e não será corrigido silenciosamente.\n"
+                    f"Exemplos:\n{dup_examples.to_string(index=False)}\n"
+                    "Para depuração temporária, rode com --duplicate_policy last."
+                )
+            if self.duplicate_policy == "last":
+                print(
+                    f"⚠️ {data_path}: {duplicated_rows} linhas duplicadas em (date, cols). "
+                    "Mantendo a última ocorrência por --duplicate_policy last."
+                )
+                df = df.drop_duplicates(["date", "cols"], keep="last")
+            else:
+                raise ValueError("duplicate_policy deve ser 'error' ou 'last'.")
 
         df = (
             df.sort_values(["cols", "date", "_row_order"])
-            .drop_duplicates(["date", "cols"], keep="last")
             .drop(columns=["_row_order"])
             .sort_values(["cols", "date"])
         )
