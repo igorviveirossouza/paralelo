@@ -25,7 +25,7 @@ Os experimentos avaliam se modelos baseados em Transformers geram scores com inf
 
 A separação por base de dados é parte do desenho empírico. Preços, retornos simples e log-retornos não devem ser combinados na mesma inferência, porque representam alvos estatísticos distintos. A base de preços mede capacidade de previsão do nível da série. As bases de retornos simples e log-retornos são mais próximas do exercício de stock ranking discutido na literatura, pois a ordenação é feita diretamente sobre retornos futuros.
 
-Os benchmarks considerados são EqualWeight, Momentum e RandomG. EqualWeight e Momentum aparecem nos arquivos fornecidos. RandomG não aparece em nenhum dos CSVs enviados; por isso, ele é mantido nas tabelas como linha de controle sem estatísticas, para evitar imputar resultados inexistentes.
+Os benchmarks considerados são EqualWeight e Momentum. Embora apareçam com rótulo operacional de TFB em alguns arquivos, eles não são modelos Transformer e são tratados aqui como benchmarks. O RandomG não aparece nos CSVs fornecidos; portanto, não é reportado nas tabelas.
 
 \section{Métricas}
 
@@ -40,7 +40,6 @@ Em todas as tabelas, ``Med.'' indica a mediana entre configurações comparávei
 \section{Resultados em $k=1$ por base de dados}
 
 A avaliação em $k=1$ é a mais próxima do exercício de previsão um passo à frente. Ela também é o caso mais difícil, porque exige que o sinal se materialize no pregão imediatamente seguinte.
-
 \begin{table}[H]
 \centering
 \scriptsize
@@ -56,15 +55,13 @@ DUET & 15 & 0,090 & 0,093 & 53,4\% & 53,6\% & 51,9\% & 52,3\% & 0,533 & 0,536 & 
 FEDformer & 15 & 0,095 & 0,105 & 53,5\% & 54,2\% & 52,1\% & 53,4\% & 0,535 & 0,542 & 0,535 & 0,543 \\
 Nonstationary Transformer & 15 & 0,097 & 0,107 & 53,8\% & 54,2\% & 52,4\% & 53,7\% & 0,531 & 0,543 & 0,531 & 0,543 \\
 TimesNet & 15 & 0,093 & 0,103 & 53,2\% & 54,7\% & 52,1\% & 52,5\% & 0,532 & 0,535 & 0,532 & 0,535 \\
-EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
-Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
-RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+Benchmark | EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Benchmark | Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
-Na base de preços, o MASTER apresenta os maiores valores máximos de IC e de precisão positiva. Entre os modelos TFB, FEDformer e Nonstationary Transformer alcançam ICs máximos acima de $0{,}10$. Esse resultado confirma que a previsão de nível contém sinal ordinal forte, mas não deve ser automaticamente transportado para o problema de retornos.
-
+Nas tabelas, EqualWeight e Momentum aparecem como benchmarks e não entram no cálculo das estatísticas dos modelos TFB. Na base de preços, o MASTER apresenta os maiores valores máximos de IC e de precisão positiva. Entre os modelos TFB, FEDformer e Nonstationary Transformer alcançam ICs máximos acima de $0{,}10$. Esse resultado confirma que a previsão de nível contém sinal ordinal forte, mas não deve ser automaticamente transportado para o problema de retornos.
 \begin{table}[H]
 \centering
 \scriptsize
@@ -79,16 +76,14 @@ MASTER & 6 & 0,008 & 0,083 & 46,7\% & 48,1\% & 46,2\% & 53,1\% & 0,507 & 0,525 &
 DUET & 15 & 0,051 & 0,070 & 51,9\% & 52,6\% & 50,5\% & 51,2\% & 0,522 & 0,531 & 0,524 & 0,532 \\
 FEDformer & 15 & 0,019 & 0,031 & 49,8\% & 51,0\% & 49,3\% & 50,0\% & 0,506 & 0,510 & 0,507 & 0,512 \\
 Nonstationary Transformer & 15 & 0,016 & 0,040 & 49,4\% & 50,8\% & 49,5\% & 50,8\% & 0,508 & 0,521 & 0,507 & 0,522 \\
-TimesNet & 15 & 0,030 & 0,065 & 50,4\% & 51,3\% & 50,0\% & 51,3\% & 0,513 & 0,529 & 0,515 & 0,530 \\
-EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
-Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
-RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+TimesNet & 15 & 0,030 & 0,065 & 50,4\% & 52,2\% & 50,0\% & 51,3\% & 0,513 & 0,529 & 0,515 & 0,530 \\
+Benchmark | EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Benchmark | Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
 Nos retornos simples, o sinal é mais fraco, como esperado em séries financeiras estacionárias e ruidosas. Ainda assim, DUET e TimesNet preservam ICs positivos e AUCs acima de $0{,}5$. A precisão negativa também aparece preenchida para os modelos TFB nos arquivos fornecidos, corrigindo a lacuna da versão anterior do relatório.
-
 \begin{table}[H]
 \centering
 \scriptsize
@@ -99,42 +94,40 @@ Nos retornos simples, o sinal é mais fraco, como esperado em séries financeira
 \toprule
 Modelo & n & IC Med. & IC Max. & Prec.+ Med. & Prec.+ Max. & Prec.- Med. & Prec.- Max. & AUC alta Med. & AUC alta Max. & AUC queda Med. & AUC queda Max. \\
 \midrule
-MASTER & 6 & -0,001 & 0,007 & 48,1\% & 57,0\% & 46,2\% & 46,2\% & 0,496 & 0,503 & 0,504 & 0,509 \\
-DUET & 15 & 0,050 & 0,069 & 51,7\% & 52,7\% & 50,5\% & 51,1\% & 0,522 & 0,530 & 0,523 & 0,533 \\
+MASTER & 6 & -0,001 & 0,007 & 48,1\% & 57,0\% & 46,2\% & 46,2\% & 0,495 & 0,503 & 0,504 & 0,509 \\
+DUET & 15 & 0,050 & 0,069 & 51,7\% & 52,7\% & 50,5\% & 51,1\% & 0,522 & 0,532 & 0,523 & 0,533 \\
 FEDformer & 15 & 0,020 & 0,033 & 49,9\% & 51,2\% & 49,3\% & 50,1\% & 0,507 & 0,511 & 0,508 & 0,513 \\
 Nonstationary Transformer & 15 & 0,016 & 0,041 & 49,4\% & 50,9\% & 49,5\% & 50,7\% & 0,508 & 0,521 & 0,507 & 0,523 \\
 TimesNet & 15 & 0,031 & 0,066 & 50,8\% & 52,2\% & 50,4\% & 51,3\% & 0,514 & 0,529 & 0,515 & 0,531 \\
-EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
-Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
-RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+Benchmark | EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Benchmark | Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
 \bottomrule
 \end{tabular}}
 \end{table}
 
 Os log-retornos reproduzem a hierarquia observada nos retornos simples. O DUET é o modelo TFB mais consistente, com IC mediano positivo e maior IC máximo. O comportamento semelhante entre retornos simples e log-retornos reforça que a conclusão não depende apenas da escala do retorno.
-
 \begin{table}[H]
 \centering
 \scriptsize
 \caption{Melhores configurações individuais em $k=1$, ordenadas por IC Spearman.}
 \label{tab:topk1}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{llrrrrrr}
+\begin{tabular}{llrrrrrrr}
 \toprule
-Base & Modelo & lookback & pred\_len & IC & Prec.+ & Prec.- & AUC alta \\
+Base & Modelo & lookback & pred\_len & IC & Prec.+ & Prec.- & AUC alta & AUC queda \\
 \midrule
-preços & MASTER & 32 & 1 & 0,156 & 69,1\% & 48,3\% & 0,607 \\
-preços & MASTER & 32 & 1 & 0,129 & 62,6\% & 46,9\% & 0,579 \\
-preços & MASTER & 104 & 1 & 0,120 & 52,6\% & 47,5\% & 0,570 \\
-preços & Nonstationary Transformer & 104 & 24 & 0,107 & 54,1\% & 53,6\% & 0,543 \\
-preços & FEDformer & 104 & 5 & 0,105 & 54,0\% & 53,4\% & 0,542 \\
-preços & FEDformer & 104 & 1 & 0,103 & 54,2\% & 53,1\% & 0,541 \\
-preços & TimesNet & 104 & 15 & 0,103 & 54,7\% & 52,5\% & 0,532 \\
-preços & Nonstationary Transformer & 104 & 10 & 0,102 & 54,2\% & 53,6\% & 0,531 \\
-preços & FEDformer & 104 & 15 & 0,101 & 53,3\% & 53,2\% & 0,540 \\
-preços & TimesNet & 104 & 5 & 0,101 & 54,4\% & 52,1\% & 0,534 \\
-preços & Nonstationary Transformer & 104 & 15 & 0,100 & 53,9\% & 52,9\% & 0,530 \\
-preços & TimesNet & 104 & 10 & 0,100 & 54,5\% & 52,1\% & 0,533 \\
+preços & MASTER & 32 & 1 & 0,156 & 69,1\% & 48,3\% & 0,607 & 0,600 \\
+preços & MASTER & 32 & 1 & 0,129 & 62,6\% & 46,9\% & 0,579 & 0,582 \\
+preços & MASTER & 104 & 1 & 0,120 & 52,6\% & 47,5\% & 0,570 & 0,578 \\
+preços & Nonstationary Transformer & 104 & 1 & 0,107 & 54,1\% & -- & 0,543 & 0,543 \\
+preços & FEDformer & 104 & 1 & 0,105 & 54,0\% & -- & 0,542 & 0,543 \\
+preços & FEDformer & 104 & 1 & 0,103 & 54,2\% & -- & 0,541 & 0,542 \\
+preços & TimesNet & 104 & 1 & 0,103 & 54,7\% & -- & 0,532 & 0,532 \\
+preços & Nonstationary Transformer & 104 & 1 & 0,102 & 54,2\% & -- & 0,531 & 0,531 \\
+preços & FEDformer & 104 & 1 & 0,101 & 53,3\% & -- & 0,540 & 0,540 \\
+preços & TimesNet & 104 & 1 & 0,101 & 54,4\% & -- & 0,534 & 0,534 \\
+preços & Nonstationary Transformer & 104 & 1 & 0,100 & 53,9\% & -- & 0,530 & 0,530 \\
+preços & TimesNet & 104 & 1 & 0,100 & 54,5\% & -- & 0,533 & 0,532 \\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -144,7 +137,6 @@ As melhores configurações individuais em $k=1$ mostram que o limite superior d
 \section{Precisão dos modelos TFB por horizonte}
 
 A Tabela \ref{tab:tfbprec} organiza a precisão positiva do experimento TFB por \texttt{pred\_len} e janela de trading. A leitura correta é dinâmica: quando $k=1$, a precisão média fica próxima de $51\%$; quando a janela de realização aumenta, a precisão média se desloca para a faixa de $59\%$ a $62\%$, e os máximos ultrapassam $70\%$ em algumas combinações.
-
 \begin{table}[H]
 \centering
 \scriptsize
@@ -177,25 +169,25 @@ pred\_len & k & n & Prec. média & Prec. med. & Prec. max. & Sharpe médio & Ret
 
 \section{Gráficos de linha por \texttt{pred\_len}}
 
-Os gráficos facetados por modelo são a evidência visual mais importante, pois mostram como a estatística muda ao longo do horizonte de predição sem misturar arquiteturas. Nas Figuras \ref{fig:spearmanpred} e \ref{fig:precisionpred}, o eixo horizontal é o \texttt{pred\_len}; as linhas distinguem a janela de trading; as linhas de painéis separam as bases de dados; as colunas separam os modelos.
+A evidência gráfica central é a evolução das métricas ao longo do horizonte de predição. Nas Figuras \ref{fig:spearmanpred} e \ref{fig:precisionpred}, o eixo horizontal é o \texttt{pred\_len}; cada linha representa uma janela de trading. Os painéis permitem comparar, sem agregação indevida, bases de dados e arquiteturas.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figuras/fig_tfb_spearman_predlen_facet_modelo.png}
-    \caption{TFB: IC Spearman mediano por \texttt{pred\_len}, facetado por base de dados e modelo.}
+    \caption{IC Spearman mediano por horizonte de predição nos modelos TFB.}
     \label{fig:spearmanpred}
 \end{figure}
 
-A Figura \ref{fig:spearmanpred} mostra que a melhora do IC não é uniforme entre bases. Em preços, as curvas ficam claramente acima de zero, especialmente em janelas maiores. Em retornos e log-retornos, o sinal é menor, mas ainda positivo para os melhores modelos, sobretudo DUET e TimesNet. Esse padrão é compatível com a dificuldade empírica de prever retornos diários, mas também indica que há informação ordinal explorável.
+A Figura \ref{fig:spearmanpred} mostra heterogeneidade relevante entre alvos de previsão. Em preços, as curvas ficam claramente acima de zero, especialmente em janelas maiores. Em retornos e log-retornos, o sinal é menor, mas ainda positivo para os melhores modelos, sobretudo DUET e TimesNet. Esse padrão é compatível com a dificuldade empírica de prever retornos diários, mas também indica que há informação ordinal explorável.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figuras/fig_tfb_precision_positive_predlen_facet_modelo.png}
-    \caption{TFB: precisão positiva mediana por \texttt{pred\_len}, facetada por base de dados e modelo.}
+    \caption{Precisão direcional positiva por horizonte de predição nos modelos TFB.}
     \label{fig:precisionpred}
 \end{figure}
 
-A Figura \ref{fig:precisionpred} apresenta a evidência mais direta de taxa de acerto direcional. A linha horizontal em $50\%$ representa o nível aleatório. O deslocamento das curvas para cima quando a janela de trading aumenta sugere que o sinal previsto pelos Transformers se realiza de forma mais estável em horizontes de carteira maiores do que em um único pregão. Isso é particularmente importante para a interpretação econômica: o modelo pode ser fraco para acertar o próximo dia isoladamente, mas útil para ordenar ativos em janelas de rebalanceamento mais longas.
+A Figura \ref{fig:precisionpred} apresenta a evidência mais direta de acurácia direcional. A linha horizontal em $50\%$ representa o nível aleatório. O deslocamento das curvas para cima quando a janela de trading aumenta sugere que o sinal previsto pelos Transformers se realiza de forma mais estável em horizontes de carteira maiores do que em um único pregão. Isso é particularmente importante para a interpretação econômica: o modelo pode ser fraco para acertar o próximo dia isoladamente, mas útil para ordenar ativos em janelas de rebalanceamento mais longas.
 
 \section{MASTER versus TFB}
 
