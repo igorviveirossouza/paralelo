@@ -219,6 +219,45 @@ def _auc_from_sinais(json_path: Path, root: Path) -> dict[str, Any]:
         return {}
     return {k: auc.get(k) for k in METRICAS_INTERESSE if k.startswith("auc_") and k in auc}
 
+def _negative_precision_from_sinais(json_path: Path) -> dict[str, Any]:
+    sinais_path = json_path.parent / "sinais.csv"
+    if not sinais_path.exists():
+        return {}
+
+    try:
+        sinais = pd.read_csv(sinais_path)
+    except Exception:
+        return {}
+
+    if not {"pred_ret_k", "real_ret_k"}.issubset(sinais.columns):
+        return {}
+
+    pred = pd.to_numeric(sinais["pred_ret_k"], errors="coerce")
+    real = pd.to_numeric(sinais["real_ret_k"], errors="coerce")
+
+    valid = pred.notna() & real.notna()
+    if not valid.any():
+        return {"mean_precision_negative": np.nan}
+
+    tmp = pd.DataFrame({
+        "pred_ret_k": pred[valid],
+        "real_ret_k": real[valid],
+    })
+
+    if "origin_step" in sinais.columns:
+        tmp["origin_step"] = sinais.loc[valid, "origin_step"].values
+    else:
+        tmp["origin_step"] = 0
+
+    por_janela = []
+    for _, g in tmp.groupby("origin_step", sort=True):
+        g_neg = g[g["pred_ret_k"] < 0]
+        if len(g_neg) > 0:
+            por_janela.append(float((g_neg["real_ret_k"] < 0).mean()))
+
+    return {
+        "mean_precision_negative": float(np.mean(por_janela)) if por_janela else np.nan
+    }
 
 def _valid_result(metrics: dict[str, Any]) -> bool:
     return any(k in metrics for k in TODAS_METRICAS)
@@ -228,7 +267,7 @@ def _scan_group(grupo: GrupoBusca) -> list[dict[str, Any]]:
     root = grupo.root
     if not root.exists():
         return []
-
+    
     rows: list[dict[str, Any]] = []
     for json_path in sorted(root.rglob("*.json")):
         if grupo.benchmark_only and not BENCHMARK_RE.search(str(json_path)):
@@ -246,6 +285,13 @@ def _scan_group(grupo: GrupoBusca) -> list[dict[str, Any]]:
         auc_metrics = _auc_from_sinais(json_path, root)
         for key, value in auc_metrics.items():
             metrics.setdefault(key, value)
+
+            neg_metrics = _negative_precision_from_sinais(json_path)
+    
+        for key, value in neg_metrics.items():
+            current = metrics.get(key, np.nan)
+            if key not in metrics or pd.isna(current):
+                metrics[key] = value
 
         row = _metadata_from_path(json_path, root, grupo.nome, params)
         row.update({k: metrics.get(k, np.nan) for k in TODAS_METRICAS})
