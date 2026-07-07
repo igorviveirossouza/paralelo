@@ -1,0 +1,215 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage[brazil]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+\usepackage{array}
+\usepackage{longtable}
+
+\title{Evidências empíricas sobre Transformers para previsão e ordenação de ativos da B3}
+\author{Relatório técnico preliminar}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Objetivo e desenho empírico}
+
+Os experimentos avaliam se modelos baseados em Transformers geram scores com informação útil para ordenar ativos da B3. A análise privilegia métricas de ranking e de decisão direcional, e não apenas erro de previsão. As estatísticas centrais são o IC de Spearman, a precisão direcional positiva, a precisão direcional negativa e as AUCs de alta e de queda.
+
+A separação por base de dados é parte do desenho empírico. Preços, retornos simples e log-retornos não devem ser combinados na mesma inferência, porque representam alvos estatísticos distintos. A base de preços mede capacidade de previsão do nível da série. As bases de retornos simples e log-retornos são mais próximas do exercício de stock ranking discutido na literatura, pois a ordenação é feita diretamente sobre retornos futuros.
+
+Os benchmarks considerados são EqualWeight, Momentum e RandomG. EqualWeight e Momentum aparecem nos arquivos fornecidos. RandomG não aparece em nenhum dos CSVs enviados; por isso, ele é mantido nas tabelas como linha de controle sem estatísticas, para evitar imputar resultados inexistentes.
+
+\section{Métricas}
+
+O IC de Spearman é a correlação ordinal entre o score previsto e o retorno realizado:
+\[
+IC_t^{Sp}=\rho\left(\operatorname{rank}(\hat{s}_{i,t}),\operatorname{rank}(r_{i,t})\right).
+\]
+A precisão positiva mede a fração de ativos selecionados para o lado comprado que efetivamente têm retorno positivo. A precisão negativa é a fração análoga no lado vendido. A AUC de alta mede a capacidade do score de separar retornos positivos dos demais; a AUC de queda mede a separação de retornos negativos. AUC igual a $0{,}5$ é compatível com classificação aleatória; valores acima de $0{,}5$ indicam discriminação direcional.
+
+Em todas as tabelas, ``Med.'' indica a mediana entre configurações comparáveis e ``Max.'' indica o melhor valor observado. Essa dupla leitura é importante: a mediana indica robustez típica do modelo; o máximo indica o potencial alcançado por uma configuração específica da arquitetura.
+
+\section{Resultados em $k=1$ por base de dados}
+
+A avaliação em $k=1$ é a mais próxima do exercício de previsão um passo à frente. Ela também é o caso mais difícil, porque exige que o sinal se materialize no pregão imediatamente seguinte.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Base de preços: estatísticas medianas e máximas em $k=1$.}
+\label{tab:precos}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+Modelo & n & IC Med. & IC Max. & Prec.+ Med. & Prec.+ Max. & Prec.- Med. & Prec.- Max. & AUC alta Med. & AUC alta Max. & AUC queda Med. & AUC queda Max. \\
+\midrule
+MASTER & 6 & 0,103 & 0,156 & 53,9\% & 69,1\% & 47,2\% & 48,3\% & 0,553 & 0,607 & 0,569 & 0,600 \\
+DUET & 15 & 0,090 & 0,093 & 53,4\% & 53,6\% & 51,9\% & 52,3\% & 0,533 & 0,536 & 0,533 & 0,536 \\
+FEDformer & 15 & 0,095 & 0,105 & 53,5\% & 54,2\% & 52,1\% & 53,4\% & 0,535 & 0,542 & 0,535 & 0,543 \\
+Nonstationary Transformer & 15 & 0,097 & 0,107 & 53,8\% & 54,2\% & 52,4\% & 53,7\% & 0,531 & 0,543 & 0,531 & 0,543 \\
+TimesNet & 15 & 0,093 & 0,103 & 53,2\% & 54,7\% & 52,1\% & 52,5\% & 0,532 & 0,535 & 0,532 & 0,535 \\
+EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
+RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Na base de preços, o MASTER apresenta os maiores valores máximos de IC e de precisão positiva. Entre os modelos TFB, FEDformer e Nonstationary Transformer alcançam ICs máximos acima de $0{,}10$. Esse resultado confirma que a previsão de nível contém sinal ordinal forte, mas não deve ser automaticamente transportado para o problema de retornos.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Base de retornos simples: estatísticas medianas e máximas em $k=1$.}
+\label{tab:retornos}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+Modelo & n & IC Med. & IC Max. & Prec.+ Med. & Prec.+ Max. & Prec.- Med. & Prec.- Max. & AUC alta Med. & AUC alta Max. & AUC queda Med. & AUC queda Max. \\
+\midrule
+MASTER & 6 & 0,008 & 0,083 & 46,7\% & 48,1\% & 46,2\% & 53,1\% & 0,507 & 0,525 & 0,507 & 0,528 \\
+DUET & 15 & 0,051 & 0,070 & 51,9\% & 52,6\% & 50,5\% & 51,2\% & 0,522 & 0,531 & 0,524 & 0,532 \\
+FEDformer & 15 & 0,019 & 0,031 & 49,8\% & 51,0\% & 49,3\% & 50,0\% & 0,506 & 0,510 & 0,507 & 0,512 \\
+Nonstationary Transformer & 15 & 0,016 & 0,040 & 49,4\% & 50,8\% & 49,5\% & 50,8\% & 0,508 & 0,521 & 0,507 & 0,522 \\
+TimesNet & 15 & 0,030 & 0,065 & 50,4\% & 51,3\% & 50,0\% & 51,3\% & 0,513 & 0,529 & 0,515 & 0,530 \\
+EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
+RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Nos retornos simples, o sinal é mais fraco, como esperado em séries financeiras estacionárias e ruidosas. Ainda assim, DUET e TimesNet preservam ICs positivos e AUCs acima de $0{,}5$. A precisão negativa também aparece preenchida para os modelos TFB nos arquivos fornecidos, corrigindo a lacuna da versão anterior do relatório.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Base de log-retornos: estatísticas medianas e máximas em $k=1$.}
+\label{tab:logretornos}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrr}
+\toprule
+Modelo & n & IC Med. & IC Max. & Prec.+ Med. & Prec.+ Max. & Prec.- Med. & Prec.- Max. & AUC alta Med. & AUC alta Max. & AUC queda Med. & AUC queda Max. \\
+\midrule
+MASTER & 6 & -0,001 & 0,007 & 48,1\% & 57,0\% & 46,2\% & 46,2\% & 0,496 & 0,503 & 0,504 & 0,509 \\
+DUET & 15 & 0,050 & 0,069 & 51,7\% & 52,7\% & 50,5\% & 51,1\% & 0,522 & 0,530 & 0,523 & 0,533 \\
+FEDformer & 15 & 0,020 & 0,033 & 49,9\% & 51,2\% & 49,3\% & 50,1\% & 0,507 & 0,511 & 0,508 & 0,513 \\
+Nonstationary Transformer & 15 & 0,016 & 0,041 & 49,4\% & 50,9\% & 49,5\% & 50,7\% & 0,508 & 0,521 & 0,507 & 0,523 \\
+TimesNet & 15 & 0,031 & 0,066 & 50,8\% & 52,2\% & 50,4\% & 51,3\% & 0,514 & 0,529 & 0,515 & 0,531 \\
+EqualWeight & 54 & -- & -- & 49,2\% & 49,2\% & -- & -- & -- & -- & -- & -- \\
+Momentum & 54 & -0,015 & -0,013 & 48,6\% & 48,6\% & 48,8\% & 48,9\% & 0,494 & 0,494 & 0,494 & 0,494 \\
+RandomG & 0 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Os log-retornos reproduzem a hierarquia observada nos retornos simples. O DUET é o modelo TFB mais consistente, com IC mediano positivo e maior IC máximo. O comportamento semelhante entre retornos simples e log-retornos reforça que a conclusão não depende apenas da escala do retorno.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{Melhores configurações individuais em $k=1$, ordenadas por IC Spearman.}
+\label{tab:topk1}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrrr}
+\toprule
+Base & Modelo & lookback & pred\_len & IC & Prec.+ & Prec.- & AUC alta \\
+\midrule
+preços & MASTER & 32 & 1 & 0,156 & 69,1\% & 48,3\% & 0,607 \\
+preços & MASTER & 32 & 1 & 0,129 & 62,6\% & 46,9\% & 0,579 \\
+preços & MASTER & 104 & 1 & 0,120 & 52,6\% & 47,5\% & 0,570 \\
+preços & Nonstationary Transformer & 104 & 24 & 0,107 & 54,1\% & 53,6\% & 0,543 \\
+preços & FEDformer & 104 & 5 & 0,105 & 54,0\% & 53,4\% & 0,542 \\
+preços & FEDformer & 104 & 1 & 0,103 & 54,2\% & 53,1\% & 0,541 \\
+preços & TimesNet & 104 & 15 & 0,103 & 54,7\% & 52,5\% & 0,532 \\
+preços & Nonstationary Transformer & 104 & 10 & 0,102 & 54,2\% & 53,6\% & 0,531 \\
+preços & FEDformer & 104 & 15 & 0,101 & 53,3\% & 53,2\% & 0,540 \\
+preços & TimesNet & 104 & 5 & 0,101 & 54,4\% & 52,1\% & 0,534 \\
+preços & Nonstationary Transformer & 104 & 15 & 0,100 & 53,9\% & 52,9\% & 0,530 \\
+preços & TimesNet & 104 & 10 & 0,100 & 54,5\% & 52,1\% & 0,533 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+As melhores configurações individuais em $k=1$ mostram que o limite superior de desempenho é economicamente relevante. Em preços, há ICs acima de $0{,}10$ e precisão positiva substancialmente acima de $50\%$. Em retornos e log-retornos, os máximos são menores, mas ainda preservam sinal ordinal positivo em algumas configurações.
+
+\section{Precisão dos modelos TFB por horizonte}
+
+A Tabela \ref{tab:tfbprec} organiza a precisão positiva do experimento TFB por \texttt{pred\_len} e janela de trading. A leitura correta é dinâmica: quando $k=1$, a precisão média fica próxima de $51\%$; quando a janela de realização aumenta, a precisão média se desloca para a faixa de $59\%$ a $62\%$, e os máximos ultrapassam $70\%$ em algumas combinações.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\caption{TFB: precisão positiva por \texttt{pred\_len} e janela de trading.}
+\label{tab:tfbprec}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{rrrrrrrr}
+\toprule
+pred\_len & k & n & Prec. média & Prec. med. & Prec. max. & Sharpe médio & Retorno médio \\
+\midrule
+1 & 1 & 36 & 51,0\% & 50,8\% & 54,2\% & 2,87 & 74,7\% \\
+5 & 1 & 36 & 50,8\% & 50,2\% & 54,4\% & 2,74 & 72,2\% \\
+5 & 5 & 36 & 55,7\% & 56,0\% & 62,4\% & 2,99 & 75,1\% \\
+10 & 1 & 36 & 51,1\% & 51,0\% & 54,5\% & 2,95 & 76,2\% \\
+10 & 5 & 36 & 56,2\% & 56,7\% & 63,2\% & 3,19 & 79,0\% \\
+10 & 10 & 36 & 59,3\% & 59,9\% & 67,6\% & 2,80 & 76,5\% \\
+15 & 1 & 36 & 51,0\% & 51,1\% & 54,7\% & 2,99 & 77,2\% \\
+15 & 5 & 36 & 55,8\% & 56,4\% & 63,3\% & 3,12 & 77,1\% \\
+15 & 10 & 36 & 59,6\% & 60,4\% & 68,3\% & 2,88 & 79,2\% \\
+15 & 15 & 36 & 61,7\% & 64,3\% & 72,5\% & 2,84 & 79,8\% \\
+24 & 1 & 36 & 50,9\% & 50,9\% & 54,1\% & 2,87 & 72,8\% \\
+24 & 5 & 36 & 55,7\% & 56,8\% & 62,4\% & 2,86 & 71,2\% \\
+24 & 10 & 36 & 59,1\% & 59,7\% & 67,3\% & 2,67 & 74,8\% \\
+24 & 15 & 36 & 62,0\% & 64,1\% & 72,4\% & 2,93 & 82,3\% \\
+24 & 20 & 36 & 62,0\% & 63,9\% & 79,8\% & 2,71 & 77,4\% \\
+24 & 24 & 36 & 62,3\% & 64,0\% & 72,9\% & 1,95 & 67,8\% \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\section{Gráficos de linha por \texttt{pred\_len}}
+
+Os gráficos facetados por modelo são a evidência visual mais importante, pois mostram como a estatística muda ao longo do horizonte de predição sem misturar arquiteturas. Nas Figuras \ref{fig:spearmanpred} e \ref{fig:precisionpred}, o eixo horizontal é o \texttt{pred\_len}; as linhas distinguem a janela de trading; as linhas de painéis separam as bases de dados; as colunas separam os modelos.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figuras/fig_tfb_spearman_predlen_facet_modelo.png}
+    \caption{TFB: IC Spearman mediano por \texttt{pred\_len}, facetado por base de dados e modelo.}
+    \label{fig:spearmanpred}
+\end{figure}
+
+A Figura \ref{fig:spearmanpred} mostra que a melhora do IC não é uniforme entre bases. Em preços, as curvas ficam claramente acima de zero, especialmente em janelas maiores. Em retornos e log-retornos, o sinal é menor, mas ainda positivo para os melhores modelos, sobretudo DUET e TimesNet. Esse padrão é compatível com a dificuldade empírica de prever retornos diários, mas também indica que há informação ordinal explorável.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figuras/fig_tfb_precision_positive_predlen_facet_modelo.png}
+    \caption{TFB: precisão positiva mediana por \texttt{pred\_len}, facetada por base de dados e modelo.}
+    \label{fig:precisionpred}
+\end{figure}
+
+A Figura \ref{fig:precisionpred} apresenta a evidência mais direta de taxa de acerto direcional. A linha horizontal em $50\%$ representa o nível aleatório. O deslocamento das curvas para cima quando a janela de trading aumenta sugere que o sinal previsto pelos Transformers se realiza de forma mais estável em horizontes de carteira maiores do que em um único pregão. Isso é particularmente importante para a interpretação econômica: o modelo pode ser fraco para acertar o próximo dia isoladamente, mas útil para ordenar ativos em janelas de rebalanceamento mais longas.
+
+\section{MASTER versus TFB}
+
+A comparação entre MASTER e TFB exige uma ressalva estrutural. Nos modelos TFB, \texttt{pred\_len} representa uma trajetória prevista de múltiplos passos. Na implementação do MASTER usada nos experimentos, o modelo prediz um ponto $H$ passos à frente. Portanto, o MASTER não produz o vetor intermediário de previsões entre $t+1$ e $t+H$. Essa diferença explica por que alguns gráficos baseados em variabilidade ao longo da trajetória prevista são naturais para TFB, mas não para MASTER.
+
+\section{Conclusão}
+
+Com as bases separadas, a conclusão fica mais defensável. A evidência em preços é forte, com ICs máximos acima de $0{,}10$ e precisão positiva máxima elevada. Em retornos simples e log-retornos, o sinal é menor, mas os modelos TFB - especialmente DUET e TimesNet - preservam IC positivo, precisão acima de $50\%$ e AUCs acima do nível aleatório. O resultado mais relevante é a dinâmica por horizonte: as precisões e os ICs melhoram quando a janela de trading aumenta, indicando que o sinal capturado pelos Transformers é mais robusto em janelas de realização superiores a um pregão.
+
+\begin{thebibliography}{9}
+\bibitem{Kwiatkowski2025} Kwiatkowski, J.; Chudziak, J. A. (2025). \textit{On Evaluating Loss Functions for Stock Ranking: An Empirical Analysis with Transformer Model}. arXiv:2510.14156.
+\bibitem{Li2023MASTER} Li, T.; Liu, Z.; Shen, Y.; Wang, X.; Chen, H.; Huang, S. (2023). \textit{MASTER: Market-Guided Stock Transformer for Stock Price Forecasting}. arXiv:2312.15235.
+\bibitem{Qiu2024TFB} Qiu, X. et al. (2024). \textit{TFB: Towards Comprehensive and Fair Benchmarking of Time Series Forecasting Methods}. Proceedings of the VLDB Endowment.
+\bibitem{Fawcett2006} Fawcett, T. (2006). An introduction to ROC analysis. \textit{Pattern Recognition Letters}, 27(8), 861--874.
+\end{thebibliography}
+
+\end{document}
