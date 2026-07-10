@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -138,10 +139,8 @@ def _validate_calendar(pred: pd.DataFrame, prices: pd.DataFrame, rebalance_k: in
     chk["holding_period"] = chk["target_step_pos"] - chk["origin_step_pos"]
     bad_h = chk[chk["holding_period"] != chk["h"]]
     if not bad_h.empty:
-        raise ValueError(
-            "Calendário inconsistente: target_step não está h pregões após origin_step. "
-            "Provável ordenação lexicográfica. Exemplos:\n" + bad_h.head(12).to_string(index=False)
-        )
+        raise ValueError("Calendário inconsistente: target_step não está h pregões após origin_step. "
+                         "Provável ordenação lexicográfica. Exemplos:\n" + bad_h.head(12).to_string(index=False))
     if "origin_pos" in chk.columns:
         bad = chk[chk["origin_pos"] != chk["origin_step_pos"]]
         if not bad.empty:
@@ -159,6 +158,12 @@ def _validate_calendar(pred: pd.DataFrame, prices: pd.DataFrame, rebalance_k: in
 
 def build_signals(predictions: pd.DataFrame, prices: pd.DataFrame, *, model_output: str = "returns",
                   rebalance_k: int = 5, returns_mode: str = "step") -> pd.DataFrame:
+    """Converte previsões em um score de ordenação e junta o retorno realizado.
+
+    No modo ``score``, a saída do horizonte k é usada diretamente como score
+    transversal. Não há exponenciação, composição temporal nem interpretação de
+    sinal econômico.
+    """
     if rebalance_k < 1:
         raise ValueError("rebalance_k deve ser >= 1.")
     if rebalance_k > int(predictions["h"].max()):
@@ -174,33 +179,36 @@ def build_signals(predictions: pd.DataFrame, prices: pd.DataFrame, *, model_outp
             pred_k = (predictions[predictions["h"].between(1, rebalance_k)]
                       .assign(gross_pred=lambda x: 1.0 + x["y_pred"].astype(float))
                       .groupby(["janela", "origin_step", "papel"], as_index=False)["gross_pred"].prod())
-            pred_k["pred_ret_k"] = pred_k["gross_pred"] - 1.0
+            pred_k["pred_score"] = pred_k["gross_pred"] - 1.0
         elif returns_mode == "cumulative":
             pred_k = predictions[predictions["h"] == rebalance_k].copy()
-            pred_k["pred_ret_k"] = pred_k["y_pred"].astype(float)
+            pred_k["pred_score"] = pred_k["y_pred"].astype(float)
         else:
             raise ValueError("returns_mode deve ser 'step' ou 'cumulative'.")
-        pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
     elif model_output == "log_returns":
         if returns_mode == "step":
             pred_k = (predictions[predictions["h"].between(1, rebalance_k)]
                       .assign(log_pred=lambda x: x["y_pred"].astype(float))
                       .groupby(["janela", "origin_step", "papel"], as_index=False)["log_pred"].sum())
-            pred_k["pred_ret_k"] = np.exp(pred_k["log_pred"]) - 1.0
+            pred_k["pred_score"] = np.exp(pred_k["log_pred"]) - 1.0
         elif returns_mode == "cumulative":
             pred_k = predictions[predictions["h"] == rebalance_k].copy()
-            pred_k["pred_ret_k"] = np.exp(pred_k["y_pred"].astype(float)) - 1.0
+            pred_k["pred_score"] = np.exp(pred_k["y_pred"].astype(float)) - 1.0
         else:
             raise ValueError("returns_mode deve ser 'step' ou 'cumulative'.")
-        pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
     elif model_output == "prices":
         pred_k = predictions[predictions["h"] == rebalance_k].copy()
         pred_k = pred_k.merge(base[["origin_step", "papel", "origin_price"]], on=["origin_step", "papel"], how="left")
-        pred_k["pred_ret_k"] = pred_k["y_pred"].astype(float) / pred_k["origin_price"] - 1.0
-        pred_k = pred_k[["janela", "origin_step", "papel", "pred_ret_k"]]
+        pred_k["pred_score"] = pred_k["y_pred"].astype(float) / pred_k["origin_price"] - 1.0
+    elif model_output == "score":
+        pred_k = predictions[predictions["h"] == rebalance_k].copy()
+        pred_k["pred_score"] = pd.to_numeric(pred_k["y_pred"], errors="coerce")
     else:
-        raise ValueError("model_output deve ser 'returns', 'log_returns' ou 'prices'.")
+        raise ValueError("model_output deve ser 'returns', 'log_returns', 'prices' ou 'score'.")
 
+    pred_k = pred_k[["janela", "origin_step", "papel", "pred_score"]].copy()
+    # Compatibilidade: em score, pred_ret_k é apenas um alias e não um retorno calibrado.
+    pred_k["pred_ret_k"] = pred_k["pred_score"]
     realized = predictions[predictions["h"] == rebalance_k][["janela", "origin_step", "target_step", "papel"]]
     realized = realized.merge(calendar_k, on=["janela", "origin_step", "target_step"], how="left")
     realized = realized.merge(base[["origin_step", "papel", "origin_price"]], on=["origin_step", "papel"], how="left")
@@ -211,13 +219,15 @@ def build_signals(predictions: pd.DataFrame, prices: pd.DataFrame, *, model_outp
         on=["janela", "origin_step", "papel"], how="inner",
     )
     signals = signals.rename(columns={"origin_step_pos": "origin_pos", "target_step_pos": "target_pos"})
-    return signals.dropna(subset=["pred_ret_k", "real_ret_k"])
+    signals["model_output"] = model_output
+    return signals.dropna(subset=["pred_score", "real_ret_k"])
 
 
 def simulate_top_j_strategy(signals: pd.DataFrame, *, rebalance_k: int = 5, max_assets: int = 5,
                             only_positive_pred: bool = True, annual_rf: float = 0.043):
     if max_assets < 1:
         raise ValueError("max_assets deve ser >= 1.")
+    rank_col = "pred_score" if "pred_score" in signals.columns else "pred_ret_k"
     sort_col = "origin_pos" if "origin_pos" in signals.columns else "origin_step"
     origins = signals[[sort_col]].drop_duplicates().sort_values(sort_col)[sort_col].tolist()
     df = signals[signals[sort_col].isin(set(origins[::rebalance_k]))].copy()
@@ -226,11 +236,11 @@ def simulate_top_j_strategy(signals: pd.DataFrame, *, rebalance_k: int = 5, max_
         g = g0.copy()
         origin_step, target_step = g0["origin_step"].iloc[0], g0["target_step"].iloc[0]
         origin_pos, target_pos = int(g0["origin_pos"].iloc[0]), int(g0["target_pos"].iloc[0])
-        ic = g["pred_ret_k"].corr(g["real_ret_k"], method="spearman") if g["pred_ret_k"].nunique() > 1 and g["real_ret_k"].nunique() > 1 else np.nan
+        ic = g[rank_col].corr(g["real_ret_k"], method="spearman") if g[rank_col].nunique() > 1 and g["real_ret_k"].nunique() > 1 else np.nan
         ic_rows.append({"origin_step": origin_step, "origin_pos": origin_pos, "spearman_ic": ic})
         if only_positive_pred:
-            g = g[g["pred_ret_k"] > 0]
-        g = g.sort_values("pred_ret_k", ascending=False).head(max_assets)
+            g = g[g[rank_col] > 0]
+        g = g.sort_values(rank_col, ascending=False).head(max_assets)
         if g.empty:
             port_ret, precision_positive = 0.0, np.nan
         else:
@@ -281,17 +291,24 @@ def run_backtest(**kwargs) -> dict:
     price_path = kwargs.pop("price_path")
     output_dir = kwargs.pop("output_dir", "simulacoes")
     run_name = kwargs.pop("run_name", None)
+    model_output = str(kwargs.get("model_output", "returns")).lower()
+    only_positive_pred = bool(kwargs.get("only_positive_pred", True))
+    if model_output == "score" and only_positive_pred:
+        warnings.warn("model_output='score' é ordinal; only_positive_pred foi desativado automaticamente.",
+                      UserWarning, stacklevel=2)
+        only_positive_pred = False
+        kwargs["only_positive_pred"] = False
     predictions = load_prediction_windows(pred_dir, horizon=kwargs.get("horizon", 24))
     prices = load_price_data(price_path)
-    signals = build_signals(predictions, prices, model_output=kwargs.get("model_output", "returns"),
+    signals = build_signals(predictions, prices, model_output=model_output,
                             rebalance_k=kwargs.get("rebalance_k", 5), returns_mode=kwargs.get("returns_mode", "step"))
     portfolio, selected, ic_df, metrics = simulate_top_j_strategy(
         signals, rebalance_k=kwargs.get("rebalance_k", 5), max_assets=kwargs.get("max_assets", 5),
-        only_positive_pred=kwargs.get("only_positive_pred", True), annual_rf=kwargs.get("annual_rf", 0.043)
+        only_positive_pred=only_positive_pred, annual_rf=kwargs.get("annual_rf", 0.043)
     )
     if run_name is None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"ranking_{kwargs.get('model_output', 'returns')}_k{kwargs.get('rebalance_k', 5)}_top{kwargs.get('max_assets', 5)}_{stamp}"
+        run_name = f"ranking_{model_output}_k{kwargs.get('rebalance_k', 5)}_top{kwargs.get('max_assets', 5)}_{stamp}"
     out_dir = Path(output_dir) / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
     signals.to_csv(out_dir / "sinais.csv", index=False)
@@ -299,6 +316,8 @@ def run_backtest(**kwargs) -> dict:
     selected.to_csv(out_dir / "selecionados.csv", index=False)
     ic_df.to_csv(out_dir / "ic.csv", index=False)
     params = {"pred_dir": str(pred_dir), "price_path": str(price_path), **kwargs}
+    params["model_output"] = model_output
+    params["only_positive_pred"] = only_positive_pred
     with open(out_dir / "metricas.json", "w", encoding="utf-8") as f:
         json.dump({"params": params, "metrics": metrics}, f, indent=2, ensure_ascii=False)
     return {"output_dir": str(out_dir), "metrics": metrics}
@@ -318,11 +337,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pred_dir", required=True)
     parser.add_argument("--price_path", required=True)
     parser.add_argument("--output_dir", default="simulacoes")
-    parser.add_argument("--model_output", choices=["returns", "log_returns", "prices"], required=True)
+    parser.add_argument("--model_output", choices=["returns", "log_returns", "prices", "score"], required=True,
+                        help="Use score para modelos que produzem apenas ordenação transversal, como o MASTER.")
     parser.add_argument("--rebalance_k", type=int, default=5)
     parser.add_argument("--max_assets", type=int, default=5)
     parser.add_argument("--horizon", type=int, default=24)
-    parser.add_argument("--only_positive_pred", type=_bool_arg, default=True)
+    parser.add_argument("--only_positive_pred", type=_bool_arg, default=True,
+                        help="Forçado para false quando --model_output score.")
     parser.add_argument("--returns_mode", choices=["step", "cumulative"], default="step")
     parser.add_argument("--annual_rf", type=float, default=0.043)
     parser.add_argument("--run_name", default=None)
