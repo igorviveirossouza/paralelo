@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -84,12 +85,23 @@ def _first_dict(*values: Any) -> dict[str, Any]:
 
 
 def _extract_metrics(payload: dict[str, Any]) -> dict[str, float]:
-    source = _first_dict(payload.get("metrics"), payload.get("metricas"), payload.get("results"), payload.get("resultados"), payload.get("performance")) or payload
+    source = _first_dict(
+        payload.get("metrics"),
+        payload.get("metricas"),
+        payload.get("results"),
+        payload.get("resultados"),
+        payload.get("performance"),
+    ) or payload
     return {k: _as_number(source.get(k)) for k in TODAS_METRICAS if k in source}
 
 
 def _extract_params(payload: dict[str, Any]) -> dict[str, Any]:
-    params = _first_dict(payload.get("params"), payload.get("config"), payload.get("args"), payload.get("hyperparameters"))
+    params = _first_dict(
+        payload.get("params"),
+        payload.get("config"),
+        payload.get("args"),
+        payload.get("hyperparameters"),
+    )
     if params:
         return params
     return {k: v for k, v in payload.items() if k not in {"metrics", "metricas", "results", "resultados"}}
@@ -249,48 +261,85 @@ def _valid_result(metrics: dict[str, Any]) -> bool:
     return any(k in metrics for k in TODAS_METRICAS)
 
 
-def _scan_group(grupo: GrupoBusca) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    root = grupo.root
-    if not root.exists():
-        return [], []
-    rows: list[dict[str, Any]] = []
-    excluidos: list[dict[str, Any]] = []
-    for json_path in sorted(root.rglob("*.json")):
-        if grupo.benchmark_only and not BENCHMARK_RE.search(str(json_path)):
-            continue
-        payload = _safe_json_load(json_path)
-        if payload is None:
-            continue
-        metrics = _extract_metrics(payload)
-        if not _valid_result(metrics):
-            continue
-        params = _extract_params(payload)
-        row = _metadata_from_path(json_path, root, grupo.nome, params)
-        ok, motivo = _validar_carteira(json_path, row.get("janela_trading"))
-        row["resultado_valido"] = bool(ok)
-        row["motivo_validacao"] = motivo
-        if not ok:
-            excluidos.append({**row, **{k: metrics.get(k, np.nan) for k in TODAS_METRICAS}})
-            continue
-        for key, value in _auc_from_sinais(json_path, root).items():
-            metrics.setdefault(key, value)
-        for key, value in _negative_precision_from_sinais(json_path).items():
-            if key not in metrics or pd.isna(metrics.get(key, np.nan)):
-                metrics[key] = value
-        row.update({k: metrics.get(k, np.nan) for k in TODAS_METRICAS})
-        rows.append(row)
-    return rows, excluidos
+def _scan_json_task(task: tuple[str, str, str]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    json_path_str, root_str, grupo_nome = task
+    json_path = Path(json_path_str)
+    root = Path(root_str)
+
+    payload = _safe_json_load(json_path)
+    if payload is None:
+        return None, None
+
+    metrics = _extract_metrics(payload)
+    if not _valid_result(metrics):
+        return None, None
+
+    params = _extract_params(payload)
+    row = _metadata_from_path(json_path, root, grupo_nome, params)
+    ok, motivo = _validar_carteira(json_path, row.get("janela_trading"))
+    row["resultado_valido"] = bool(ok)
+    row["motivo_validacao"] = motivo
+
+    if not ok:
+        excluded = {**row, **{k: metrics.get(k, np.nan) for k in TODAS_METRICAS}}
+        return None, excluded
+
+    for key, value in _auc_from_sinais(json_path, root).items():
+        metrics.setdefault(key, value)
+    for key, value in _negative_precision_from_sinais(json_path).items():
+        if key not in metrics or pd.isna(metrics.get(key, np.nan)):
+            metrics[key] = value
+
+    row.update({k: metrics.get(k, np.nan) for k in TODAS_METRICAS})
+    return row, None
 
 
-def carregar_metricas(grupos: dict[str, str] | None = None, base_dir: str | Path = ".") -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_scan_tasks(grupos: dict[str, str], base_dir: Path) -> list[tuple[str, str, str]]:
+    tasks: list[tuple[str, str, str]] = []
+    for nome, root_str in grupos.items():
+        grupo = GrupoBusca(
+            nome=nome,
+            root=base_dir / root_str,
+            benchmark_only=nome.lower().startswith("benchmark"),
+        )
+        if not grupo.root.exists():
+            continue
+        for json_path in sorted(grupo.root.rglob("*.json")):
+            if grupo.benchmark_only and not BENCHMARK_RE.search(str(json_path)):
+                continue
+            tasks.append((str(json_path), str(grupo.root), grupo.nome))
+    return tasks
+
+
+def _run_scan_tasks(
+    tasks: list[tuple[str, str, str]],
+    workers: int,
+) -> list[tuple[dict[str, Any] | None, dict[str, Any] | None]]:
+    if not tasks:
+        return []
+    workers = max(1, int(workers))
+    if workers == 1:
+        return [_scan_json_task(task) for task in tasks]
+
+    max_workers = min(workers, len(tasks))
+    chunksize = max(1, len(tasks) // (max_workers * 4))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(_scan_json_task, tasks, chunksize=chunksize))
+
+
+def carregar_metricas(
+    grupos: dict[str, str] | None = None,
+    base_dir: str | Path = ".",
+    workers: int = 1,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     base_dir = Path(base_dir)
     grupos = grupos or DEFAULT_GROUPS
-    rows: list[dict[str, Any]] = []
-    excluidos: list[dict[str, Any]] = []
-    for nome, root_str in grupos.items():
-        group_rows, group_excluidos = _scan_group(GrupoBusca(nome=nome, root=base_dir / root_str, benchmark_only=nome.lower().startswith("benchmark")))
-        rows.extend(group_rows)
-        excluidos.extend(group_excluidos)
+    tasks = _build_scan_tasks(grupos, base_dir)
+    results = _run_scan_tasks(tasks, workers=workers)
+
+    rows = [row for row, _ in results if row is not None]
+    excluidos = [excluded for _, excluded in results if excluded is not None]
+
     df = pd.DataFrame(rows)
     excl = pd.DataFrame(excluidos)
     for frame in [df, excl]:
@@ -303,7 +352,9 @@ def carregar_metricas(grupos: dict[str, str] | None = None, base_dir: str | Path
             if col in frame:
                 frame[col] = pd.to_numeric(frame[col], errors="coerce")
     if not df.empty:
-        df = df.sort_values(["grupo", "dataset", "modelo", "lookback", "pred_len", "janela_trading", "run"]).reset_index(drop=True)
+        df = df.sort_values(
+            ["grupo", "dataset", "modelo", "lookback", "pred_len", "janela_trading", "run"]
+        ).reset_index(drop=True)
     return df, excl.reset_index(drop=True)
 
 
@@ -363,12 +414,17 @@ def analise_k1_ic(df: pd.DataFrame, n: int = 30) -> tuple[pd.DataFrame, pd.DataF
     return resumo, top
 
 
-def comparar_global(base_dir: str | Path = ".", output_dir: str | Path = "simulacoes/comparativo_global_master_tfb",
-                    grupos: dict[str, str] | None = None, top_n: int = 20) -> dict[str, pd.DataFrame]:
+def comparar_global(
+    base_dir: str | Path = ".",
+    output_dir: str | Path = "simulacoes/comparativo_global_master_tfb",
+    grupos: dict[str, str] | None = None,
+    top_n: int = 20,
+    workers: int = 1,
+) -> dict[str, pd.DataFrame]:
     base_dir = Path(base_dir)
     output_dir = base_dir / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    metricas, excluidos = carregar_metricas(grupos=grupos, base_dir=base_dir)
+    metricas, excluidos = carregar_metricas(grupos=grupos, base_dir=base_dir, workers=workers)
     resumo = resumo_por_modelo(metricas)
     tops = top_configs(metricas, n=top_n)
     ranking = ranking_global(metricas)
@@ -404,8 +460,18 @@ def main() -> None:
     parser.add_argument("--output_dir", default="simulacoes/comparativo_global_master_tfb")
     parser.add_argument("--top_n", type=int, default=20)
     parser.add_argument("--group", action="append")
+    parser.add_argument("--workers", type=int, default=1, help="Número de processos usados na validação e no cálculo das AUCs.")
     args = parser.parse_args()
-    dfs = comparar_global(base_dir=args.base_dir, output_dir=args.output_dir, grupos=_parse_group_arg(args.group), top_n=args.top_n)
+    if args.workers < 1:
+        parser.error("--workers deve ser maior ou igual a 1.")
+    dfs = comparar_global(
+        base_dir=args.base_dir,
+        output_dir=args.output_dir,
+        grupos=_parse_group_arg(args.group),
+        top_n=args.top_n,
+        workers=args.workers,
+    )
+    print(f"Workers: {args.workers}")
     print(f"Linhas válidas carregadas: {len(dfs['metricas'])}")
     print(f"Linhas excluídas por validação: {len(dfs['resultados_excluidos_validacao'])}")
     print(f"Saídas salvas em: {Path(args.base_dir) / args.output_dir}")
