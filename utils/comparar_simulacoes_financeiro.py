@@ -5,6 +5,7 @@ import json
 import re
 import sys
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -96,26 +97,49 @@ def _infer_metadata(
     return meta
 
 
-def collect_metrics(root: str | Path, include_pred_len: bool = False) -> pd.DataFrame:
+def _collect_one_metrics(task: tuple[str, str, bool]) -> list[dict[str, Any]]:
+    json_path_str, root_str, include_pred_len = task
+    json_path = Path(json_path_str)
+    root = Path(root_str)
+
+    with open(json_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    metrics = payload.get("metrics", {}) or {}
+    if not metrics:
+        return []
+
+    neg_metrics = calcular_acerto_negativos_sinais(json_path.parent / "sinais.csv")
+    metrics = {**metrics, **neg_metrics}
+    meta = _infer_metadata(json_path, root, payload, include_pred_len=include_pred_len)
+
+    return [
+        {**meta, "estatistica": stat, "valor": value, "arquivo": str(json_path)}
+        for stat, value in metrics.items()
+    ]
+
+
+def collect_metrics(
+    root: str | Path,
+    include_pred_len: bool = False,
+    workers: int = 1,
+) -> pd.DataFrame:
     root = Path(root)
     json_files = sorted(root.glob("**/metricas.json"))
-    rows: list[dict[str, Any]] = []
+    if not json_files:
+        return pd.DataFrame()
 
-    for json_path in json_files:
-        with open(json_path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
+    workers = max(1, int(workers))
+    tasks = [(str(path), str(root), include_pred_len) for path in json_files]
 
-        metrics = payload.get("metrics", {}) or {}
-        if not metrics:
-            continue
+    if workers == 1:
+        chunks = [_collect_one_metrics(task) for task in tasks]
+    else:
+        max_workers = min(workers, len(tasks))
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            chunks = list(executor.map(_collect_one_metrics, tasks, chunksize=1))
 
-        neg_metrics = calcular_acerto_negativos_sinais(json_path.parent / "sinais.csv")
-        metrics = {**metrics, **neg_metrics}
-
-        meta = _infer_metadata(json_path, root, payload, include_pred_len=include_pred_len)
-        for stat, value in metrics.items():
-            rows.append({**meta, "estatistica": stat, "valor": value, "arquivo": str(json_path)})
-
+    rows = [row for chunk in chunks for row in chunk]
     if not rows:
         return pd.DataFrame()
 
@@ -165,9 +189,22 @@ def main() -> None:
         action="store_true",
         help="Inclui pred_len como dimensão nas colunas comparativas.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Número de processos usados para ler e calcular as métricas.",
+    )
     args = parser.parse_args()
 
-    metrics_long = collect_metrics(args.root, include_pred_len=args.pred_len)
+    if args.workers < 1:
+        parser.error("--workers deve ser maior ou igual a 1.")
+
+    metrics_long = collect_metrics(
+        args.root,
+        include_pred_len=args.pred_len,
+        workers=args.workers,
+    )
     table = build_comparison_table(metrics_long)
 
     output = Path(args.output)
@@ -180,6 +217,7 @@ def main() -> None:
         metrics_long.to_csv(long_output, index=False)
 
     print(f"Comparativo salvo em: {output}")
+    print(f"Workers: {args.workers}")
     print(f"Shape: {table.shape}")
 
 
