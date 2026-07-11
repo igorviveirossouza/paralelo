@@ -127,6 +127,47 @@ def load_price_data(price_path: str | Path, *, step_col: str = "date", asset_col
     return out.merge(order, on="step", how="left").sort_values(["papel", "step_pos"]).reset_index(drop=True)
 
 
+def _validate_saved_positions(chk: pd.DataFrame) -> None:
+    """Valida posições gravadas mesmo quando o dataset do modelo perdeu linhas iniciais."""
+    pairs = [
+        ("origin_pos", "origin_step_pos"),
+        ("target_pos", "target_step_pos"),
+    ]
+    offsets: dict[str, int] = {}
+
+    for saved_col, calendar_col in pairs:
+        if saved_col not in chk.columns:
+            continue
+        delta = chk[calendar_col].astype(int) - chk[saved_col].astype(int)
+        unique = pd.unique(delta)
+        if len(unique) != 1:
+            bad = chk.assign(position_offset=delta)
+            raise ValueError(
+                f"{saved_col} não mantém deslocamento constante em relação ao calendário de preços. "
+                "As previsões podem estar desalinhadas. Exemplos:\n" +
+                bad.head(12).to_string(index=False)
+            )
+        offsets[saved_col] = int(unique[0])
+
+    if len(set(offsets.values())) > 1:
+        details = ", ".join(f"{col}={offset}" for col, offset in offsets.items())
+        raise ValueError(
+            "origin_pos e target_pos usam deslocamentos diferentes em relação ao calendário de preços: " + details
+        )
+
+    if offsets:
+        offset = next(iter(offsets.values()))
+        if offset != 0:
+            warnings.warn(
+                "As posições gravadas nas previsões usam um calendário pré-processado com "
+                f"deslocamento constante de {offset} pregão(ões) em relação ao arquivo de preços. "
+                "origin_step e target_step foram validados; o backtest usará as posições "
+                "recalculadas no calendário de preços.",
+                UserWarning,
+                stacklevel=3,
+            )
+
+
 def _validate_calendar(pred: pd.DataFrame, prices: pd.DataFrame, rebalance_k: int) -> pd.DataFrame:
     pos_map = prices[["step", "step_pos"]].drop_duplicates("step")
     cols = ["janela", "origin_step", "target_step", "h"] + [c for c in ["origin_pos", "target_pos"] if c in pred.columns]
@@ -141,14 +182,7 @@ def _validate_calendar(pred: pd.DataFrame, prices: pd.DataFrame, rebalance_k: in
     if not bad_h.empty:
         raise ValueError("Calendário inconsistente: target_step não está h pregões após origin_step. "
                          "Provável ordenação lexicográfica. Exemplos:\n" + bad_h.head(12).to_string(index=False))
-    if "origin_pos" in chk.columns:
-        bad = chk[chk["origin_pos"] != chk["origin_step_pos"]]
-        if not bad.empty:
-            raise ValueError("origin_pos não bate com posição cronológica dos preços. Regere as previsões. Exemplos:\n" + bad.head(12).to_string(index=False))
-    if "target_pos" in chk.columns:
-        bad = chk[chk["target_pos"] != chk["target_step_pos"]]
-        if not bad.empty:
-            raise ValueError("target_pos não bate com posição cronológica dos preços. Regere as previsões. Exemplos:\n" + bad.head(12).to_string(index=False))
+    _validate_saved_positions(chk)
     k = chk[chk["h"] == rebalance_k][["janela", "origin_step", "target_step", "origin_step_pos", "target_step_pos"]].drop_duplicates()
     bad_k = k[k["target_step_pos"] - k["origin_step_pos"] != rebalance_k]
     if not bad_k.empty:
