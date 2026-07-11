@@ -16,12 +16,16 @@ export MPLCONFIGDIR="/tmp/${USER}-mpl"
 cd "$PARALELO_ROOT"
 mkdir -p logs
 
+# Permitem usar este mesmo array em etapas separadas.
+RUN_ESTIMATION="${RUN_ESTIMATION:-true}"
+RUN_BACKTEST="${RUN_BACKTEST:-true}"
+
 EPOCHS="${EPOCHS:-100}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 TEST_RATIO="${TEST_RATIO:-0.2}"
 LOSS_NAME="${LOSS_NAME:-mse}"
 MAX_ASSETS="${MAX_ASSETS:-5}"
-ONLY_POSITIVE_PRED="${ONLY_POSITIVE_PRED:-true}"
+ONLY_POSITIVE_PRED="false"
 ANNUAL_RF="${ANNUAL_RF:-0.043}"
 DUPLICATE_POLICY="${DUPLICATE_POLICY:-error}"
 
@@ -42,6 +46,22 @@ DATASETS=(
 
 VARIANTS=("full" "ohlcv_only")
 
+is_true() {
+  case "${1,,}" in
+    true|1|yes|sim) return 0 ;;
+    false|0|no|nao|não) return 1 ;;
+    *)
+      echo "Valor booleano inválido: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+if ! is_true "$RUN_ESTIMATION" && ! is_true "$RUN_BACKTEST"; then
+  echo "Nenhuma etapa habilitada: RUN_ESTIMATION=$RUN_ESTIMATION, RUN_BACKTEST=$RUN_BACKTEST"
+  exit 0
+fi
+
 N_DATASETS=${#DATASETS[@]}
 N_VARIANTS=${#VARIANTS[@]}
 N_LOOKBACKS=${#LOOKBACKS[@]}
@@ -60,7 +80,7 @@ lookback_idx=$((idx % N_LOOKBACKS)); idx=$((idx / N_LOOKBACKS))
 variant_idx=$((idx % N_VARIANTS)); idx=$((idx / N_VARIANTS))
 dataset_idx=$((idx % N_DATASETS))
 
-IFS=':' read -r TIPO_SAIDA DATA_NAME_TFB PRICE_DATASET MODEL_OUTPUT <<< "${DATASETS[$dataset_idx]}"
+IFS=':' read -r TIPO_SAIDA DATA_NAME_TFB PRICE_DATASET TARGET_KIND <<< "${DATASETS[$dataset_idx]}"
 VARIANT="${VARIANTS[$variant_idx]}"
 LOOKBACK="${LOOKBACKS[$lookback_idx]}"
 PRED_LEN="${PRED_LENS[$pred_idx]}"
@@ -83,21 +103,18 @@ case "$VARIANT" in
     ;;
 esac
 
-case "$MODEL_OUTPUT" in
+case "$TARGET_KIND" in
   returns)
     MASTER_TARGET_MODE="returns_cumulative"
-    RETURNS_MODE="cumulative"
     ;;
   log_returns)
     MASTER_TARGET_MODE="log_returns_cumulative"
-    RETURNS_MODE="cumulative"
     ;;
   prices)
     MASTER_TARGET_MODE="last"
-    RETURNS_MODE="cumulative"
     ;;
   *)
-    echo "MODEL_OUTPUT inválido: $MODEL_OUTPUT"
+    echo "TARGET_KIND inválido: $TARGET_KIND"
     exit 1
     ;;
 esac
@@ -105,16 +122,18 @@ esac
 DATA_STEM="${DATA_NAME_TFB%.csv}"
 PRED_DIR="${FORECAST_ROOT}/${DATA_STEM}/MASTER/${VARIANT_DIR}/lookback_${LOOKBACK}/pred_len_${PRED_LEN}/loss_${LOSS_NAME}"
 RUN_PREFIX="${DATA_STEM}__${VARIANT_DIR}__lb${LOOKBACK}__h${PRED_LEN}__loss${LOSS_NAME}"
-RUN_NAME="${RUN_PREFIX}__k${REBALANCE_K}__${MODEL_OUTPUT}"
+RUN_NAME="${RUN_PREFIX}__k${REBALANCE_K}__score"
 
 cat <<EOF
 ============================================================
-MASTER carteira TFB - horizonte escalar fiel
+MASTER pipeline por configuração
 TASK_ID:                 $TASK_ID / $((TOTAL - 1))
+Executar estimação:      $RUN_ESTIMATION
+Executar backtest:       $RUN_BACKTEST
 Dataset alvo:            $DATA_NAME_TFB
-Tipo saída:              $TIPO_SAIDA
+Tipo de alvo:            $TARGET_KIND
 Dataset preços carteira: $PRICE_DATASET
-Model output:            $MODEL_OUTPUT
+Saída do backtest:       score
 Variant:                 $VARIANT_DIR
 Lookback:                $LOOKBACK
 Horizonte h / k:         $PRED_LEN
@@ -128,42 +147,57 @@ Market feature files:    ${MARKET_FEATURE_FILES_ARR[*]}
 ============================================================
 EOF
 
-"$PYTHON_BIN" main_test.py \
-  --model_name MASTER \
-  --base_de_dados "$DATA_NAME_TFB" \
-  --lookback "$LOOKBACK" \
-  --pred_len "$PRED_LEN" \
-  --test_ratio "$TEST_RATIO" \
-  --batch_size "$BATCH_SIZE" \
-  --epochs "$EPOCHS" \
-  --loss_name "$LOSS_NAME" \
-  --output_dir "$FORECAST_ROOT" \
-  --extra_dirs "$VARIANT_DIR" "lookback_${LOOKBACK}" "pred_len_${PRED_LEN}" "loss_${LOSS_NAME}" \
-  --duplicate_policy "$DUPLICATE_POLICY" \
-  --master_target_mode "$MASTER_TARGET_MODE" \
-  --use_stock_factors "$USE_STOCK_FACTORS" \
-  --stock_factor_mode alpha158 \
-  --stock_factor_normalize true \
-  --use_candle_encoder "$USE_CANDLE_ENCODER" \
-  --candle_feature_mode ohlcv_relative \
-  --ohlcv_feature_file "$OHLCV_FEATURE_FILE" \
-  --use_market_features true \
-  --market_feature_files "${MARKET_FEATURE_FILES_ARR[@]}" \
-  --market_feature_mode master
+if is_true "$RUN_ESTIMATION"; then
+  echo "[ETAPA] Estimando MASTER e gerando previsões"
 
-echo "Gerando carteira: $RUN_NAME"
+  "$PYTHON_BIN" main_test.py \
+    --model_name MASTER \
+    --base_de_dados "$DATA_NAME_TFB" \
+    --lookback "$LOOKBACK" \
+    --pred_len "$PRED_LEN" \
+    --test_ratio "$TEST_RATIO" \
+    --batch_size "$BATCH_SIZE" \
+    --epochs "$EPOCHS" \
+    --loss_name "$LOSS_NAME" \
+    --output_dir "$FORECAST_ROOT" \
+    --extra_dirs "$VARIANT_DIR" "lookback_${LOOKBACK}" "pred_len_${PRED_LEN}" "loss_${LOSS_NAME}" \
+    --duplicate_policy "$DUPLICATE_POLICY" \
+    --master_target_mode "$MASTER_TARGET_MODE" \
+    --use_stock_factors "$USE_STOCK_FACTORS" \
+    --stock_factor_mode alpha158 \
+    --stock_factor_normalize true \
+    --use_candle_encoder "$USE_CANDLE_ENCODER" \
+    --candle_feature_mode ohlcv_relative \
+    --ohlcv_feature_file "$OHLCV_FEATURE_FILE" \
+    --use_market_features true \
+    --market_feature_files "${MARKET_FEATURE_FILES_ARR[@]}" \
+    --market_feature_mode master
+else
+  echo "[PULADA] Estimação"
+fi
 
-"$PYTHON_BIN" estrategias/ranking_backtest.py \
-  --pred_dir "$PRED_DIR" \
-  --price_path "data/${PRICE_DATASET}" \
-  --output_dir "$SIM_ROOT" \
-  --model_output "$MODEL_OUTPUT" \
-  --rebalance_k "$REBALANCE_K" \
-  --max_assets "$MAX_ASSETS" \
-  --horizon "$PRED_LEN" \
-  --only_positive_pred "$ONLY_POSITIVE_PRED" \
-  --returns_mode "$RETURNS_MODE" \
-  --annual_rf "$ANNUAL_RF" \
-  --run_name "$RUN_NAME"
+if is_true "$RUN_BACKTEST"; then
+  if [[ ! -d "$PRED_DIR" ]] || ! find "$PRED_DIR" -maxdepth 1 -type f -name 'janela_*.csv' -print -quit | grep -q .; then
+    echo "ERRO: previsões não encontradas em $PRED_DIR" >&2
+    exit 1
+  fi
 
-echo "✅ Experimento MASTER concluído: $RUN_NAME"
+  echo "[ETAPA] Gerando carteira em modo score: $RUN_NAME"
+
+  "$PYTHON_BIN" estrategias/ranking_backtest.py \
+    --pred_dir "$PRED_DIR" \
+    --price_path "data/${PRICE_DATASET}" \
+    --output_dir "$SIM_ROOT" \
+    --model_output score \
+    --rebalance_k "$REBALANCE_K" \
+    --max_assets "$MAX_ASSETS" \
+    --horizon "$PRED_LEN" \
+    --only_positive_pred "$ONLY_POSITIVE_PRED" \
+    --returns_mode cumulative \
+    --annual_rf "$ANNUAL_RF" \
+    --run_name "$RUN_NAME"
+else
+  echo "[PULADA] Formação de carteiras"
+fi
+
+echo "✅ Configuração MASTER concluída: $RUN_NAME"
