@@ -6,8 +6,17 @@ result/
 *.DS_Store
 venv/
 **/__pycache__/
+**/.ipynb_checkpoints/
 *.out
-*.csv
 *.err
+*.log
+*.csv
 *.png
 *.pdf
+
+# Artefatos reproduzíveis do pipeline
+logs/
+previsoes/
+simulacoes/master_tfb_experimento/
+simulacoes/tfb_multi_lb_predlen_carteiras/
+simulacoes/comparativo_global_master_tfb/
