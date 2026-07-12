@@ -10,6 +10,31 @@ TFB:    estimação -> conversão -> carteiras -> comparação TFB --/
 
 Os jobs são ligados por dependências `afterok`. MASTER e TFB podem executar em paralelo; a comparação global aguarda os últimos jobs habilitados dos dois fluxos.
 
+## Partições e paralelização
+
+As etapas de estimação usam GPU na partição `medusas_shr`. As demais etapas usam CPU na partição `gorgonas`.
+
+| Etapa | Partição | Paralelização padrão |
+|---|---|---|
+| `master_estimacao` | `medusas_shr` | array GPU |
+| `master_carteiras` | `gorgonas` | até 16 tarefas CPU simultâneas |
+| `tfb_estimacao` | `medusas_shr` | array GPU |
+| `tfb_conversao` | `gorgonas` | até 16 tarefas CPU simultâneas |
+| `tfb_carteiras` | `gorgonas` | até 16 tarefas CPU simultâneas |
+| `comparacao_master` | `gorgonas` | 16 workers Python |
+| `comparacao_tfb` | `gorgonas` | 16 workers Python |
+| `comparacao_global` | `gorgonas` | 16 workers Python |
+
+Nas etapas em array, cada tarefa processa uma configuração e usa uma CPU. O sufixo `%16` limita a execução a 16 configurações simultâneas. Nas comparações, um job recebe 16 CPUs e usa `ProcessPoolExecutor` por meio de `--workers 16`.
+
+As partições podem ser alteradas sem editar os scripts:
+
+```bash
+GPU_PARTITION=medusas_shr \
+CPU_PARTITION=gorgonas \
+bash experimentos/pipeline_completo.sh
+```
+
 ## Etapas disponíveis
 
 - `master_estimacao`: treina o MASTER em GPU e gera `janela_*.csv`.
@@ -131,23 +156,26 @@ bash experimentos/pipeline_completo.sh
 
 - `experimentos/tfb_pipeline_config.sh`: grade e resolução de cada `TASK_ID`.
 - `experimentos/tfb_estimacao_array.sh`: execução dos modelos no repositório TFB.
-- `experimentos/tfb_conversao_array.sh`: conversão das previsões.
-- `experimentos/tfb_carteiras_array.sh`: backtests e métricas financeiras.
+- `experimentos/tfb_conversao_array.sh`: conversão paralela das previsões.
+- `experimentos/tfb_carteiras_array.sh`: backtests paralelos e métricas financeiras.
 - `simulacoes/gera_comparacoes_tfb_paralelo.sh`: compilação paralela das métricas.
+- `simulacoes/gera_comparativo_global_paralelo.sh`: validação, AUCs e comparação global em paralelo.
 
 ## Diretórios padrão
 
 ```text
-Previsões brutas:     previsoes/tfb_multi_lb_predlen_carteiras/_tfb_decoded/
+Previsões brutas:      previsoes/tfb_multi_lb_predlen_carteiras/_tfb_decoded/
 Previsões convertidas: previsoes/tfb_multi_lb_predlen_carteiras/
-Carteiras e métricas: simulacoes/tfb_multi_lb_predlen_carteiras/
-Comparativo global:  simulacoes/comparativo_global_master_tfb/
+Carteiras e métricas:  simulacoes/tfb_multi_lb_predlen_carteiras/
+Comparativo global:    simulacoes/comparativo_global_master_tfb/
 ```
 
 ## Ajustes por variáveis de ambiente
 
 ```bash
 TFB_ROOT=/sonic_home/igor.viveiros/src/TFB \
+GPU_PARTITION=medusas_shr \
+CPU_PARTITION=gorgonas \
 TFB_ESTIMATION_ARRAY='0-179%4' \
 TFB_CONVERSION_ARRAY='0-179%16' \
 TFB_BACKTEST_ARRAY='0-179%16' \
