@@ -10,6 +10,8 @@
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/tfb-carteiras-%A_%a.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/tfb-carteiras-%A_%a.err
 
+# Paralelismo: uma configuração TFB por tarefa do array.
+# O limite %16 permite até 16 backtests simultâneos no cluster CPU.
 set -euo pipefail
 
 PARALELO_ROOT="${PARALELO_ROOT:-/sonic_home/igor.viveiros/paralelo}"
@@ -17,6 +19,13 @@ source "$PARALELO_ROOT/experimentos/tfb_pipeline_config.sh"
 
 cd "$PARALELO_ROOT"
 mkdir -p logs
+
+# Cada tarefa usa apenas uma CPU e não deve abrir threads internas adicionais.
+export PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 
 tfb_resolve_task "${SLURM_ARRAY_TASK_ID:-0}"
 tfb_print_task
@@ -35,10 +44,14 @@ if ((${#PRED_FILES[@]} == 0)); then
   exit 1
 fi
 
+START_TS=$(date +%s)
+echo "[CPU] nó=${SLURMD_NODENAME:-desconhecido} | job=${SLURM_ARRAY_JOB_ID:-local} | task=${SLURM_ARRAY_TASK_ID:-0}"
+
 rm -rf "$BT_PRED_DIR"
 mkdir -p "$BT_PRED_DIR" "$SIM_DIR"
 cp -- "${PRED_FILES[@]}" "$BT_PRED_DIR/"
 
+N_BACKTESTS=0
 for K in "${TFB_REBALANCE_WINDOWS_ARR[@]}"; do
   if (( K > PRED_LEN )); then
     continue
@@ -58,6 +71,10 @@ for K in "${TFB_REBALANCE_WINDOWS_ARR[@]}"; do
     --returns_mode step \
     --annual_rf "$ANNUAL_RF" \
     --run_name "k_${K}"
+
+  N_BACKTESTS=$((N_BACKTESTS + 1))
 done
 
-echo "✅ Carteiras TFB concluídas: $SIM_DIR"
+END_TS=$(date +%s)
+echo "✅ Carteiras TFB concluídas: $N_BACKTESTS backtests em $((END_TS - START_TS))s"
+echo "Saída: $SIM_DIR"
