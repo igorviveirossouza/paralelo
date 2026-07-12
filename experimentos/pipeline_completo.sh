@@ -17,6 +17,8 @@ ENABLED_STAGES=(
 set -euo pipefail
 
 PARALELO_ROOT="${PARALELO_ROOT:-/sonic_home/igor.viveiros/paralelo}"
+GPU_PARTITION="${GPU_PARTITION:-medusas_shr}"
+CPU_PARTITION="${CPU_PARTITION:-gorgonas}"
 MASTER_ESTIMATION_ARRAY="${MASTER_ESTIMATION_ARRAY:-0-107%8}"
 MASTER_BACKTEST_ARRAY="${MASTER_BACKTEST_ARRAY:-0-107%16}"
 TFB_ESTIMATION_ARRAY="${TFB_ESTIMATION_ARRAY:-0-179%6}"
@@ -115,6 +117,8 @@ TFB_DEP=""
   echo "Pipeline completo MASTER + TFB"
   echo "Data:                    $(date --iso-8601=seconds)"
   echo "Etapas:                  ${ENABLED_STAGES[*]}"
+  echo "Partição GPU:            $GPU_PARTITION"
+  echo "Partição CPU:            $CPU_PARTITION"
   echo "MASTER estimação:        $MASTER_ESTIMATION_ARRAY"
   echo "MASTER carteiras:        $MASTER_BACKTEST_ARRAY"
   echo "TFB estimação:           $TFB_ESTIMATION_ARRAY"
@@ -128,6 +132,7 @@ TFB_DEP=""
 # ---------------------------- MASTER ----------------------------
 if stage_enabled master_estimacao; then
   JOB=$(submit_job "$MASTER_DEP" \
+    --partition="$GPU_PARTITION" \
     --array="$MASTER_ESTIMATION_ARRAY" \
     --export=ALL,RUN_ESTIMATION=true,RUN_BACKTEST=false \
     experimentos/carteiras_master_array.sh)
@@ -139,6 +144,8 @@ fi
 
 if stage_enabled master_carteiras; then
   JOB=$(submit_job "$MASTER_DEP" \
+    --partition="$CPU_PARTITION" \
+    --cpus-per-task=1 \
     --array="$MASTER_BACKTEST_ARRAY" \
     experimentos/carteiras_master_backtest_array.sh)
   [[ "$JOB" != "DRYRUN" ]] && MASTER_DEP="$JOB"
@@ -150,6 +157,7 @@ fi
 # ------------------------------ TFB ------------------------------
 if stage_enabled tfb_estimacao; then
   JOB=$(submit_job "$TFB_DEP" \
+    --partition="$GPU_PARTITION" \
     --array="$TFB_ESTIMATION_ARRAY" \
     experimentos/tfb_estimacao_array.sh)
   [[ "$JOB" != "DRYRUN" ]] && TFB_DEP="$JOB"
@@ -160,6 +168,8 @@ fi
 
 if stage_enabled tfb_conversao; then
   JOB=$(submit_job "$TFB_DEP" \
+    --partition="$CPU_PARTITION" \
+    --cpus-per-task=1 \
     --array="$TFB_CONVERSION_ARRAY" \
     experimentos/tfb_conversao_array.sh)
   [[ "$JOB" != "DRYRUN" ]] && TFB_DEP="$JOB"
@@ -170,6 +180,8 @@ fi
 
 if stage_enabled tfb_carteiras; then
   JOB=$(submit_job "$TFB_DEP" \
+    --partition="$CPU_PARTITION" \
+    --cpus-per-task=1 \
     --array="$TFB_BACKTEST_ARRAY" \
     experimentos/tfb_carteiras_array.sh)
   [[ "$JOB" != "DRYRUN" ]] && TFB_DEP="$JOB"
@@ -181,6 +193,7 @@ fi
 # -------------------------- Comparações --------------------------
 if stage_enabled comparacao_master; then
   JOB=$(submit_job "$MASTER_DEP" \
+    --partition="$CPU_PARTITION" \
     --cpus-per-task="$COMPARISON_WORKERS" \
     --export=ALL,WORKERS="$COMPARISON_WORKERS" \
     simulacoes/gera_comparacoes_paralelo.sh)
@@ -192,6 +205,7 @@ fi
 
 if stage_enabled comparacao_tfb; then
   JOB=$(submit_job "$TFB_DEP" \
+    --partition="$CPU_PARTITION" \
     --cpus-per-task="$COMPARISON_WORKERS" \
     --export=ALL,WORKERS="$COMPARISON_WORKERS" \
     simulacoes/gera_comparacoes_tfb_paralelo.sh)
@@ -204,6 +218,7 @@ fi
 if stage_enabled comparacao_global; then
   GLOBAL_DEP=$(join_dependencies "$MASTER_DEP" "$TFB_DEP")
   JOB=$(submit_job "$GLOBAL_DEP" \
+    --partition="$CPU_PARTITION" \
     --cpus-per-task="$COMPARISON_WORKERS" \
     --export=ALL,WORKERS="$COMPARISON_WORKERS" \
     simulacoes/gera_comparativo_global_paralelo.sh)
