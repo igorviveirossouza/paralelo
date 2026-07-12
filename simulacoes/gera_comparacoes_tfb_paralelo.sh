@@ -9,6 +9,7 @@
 #SBATCH --output=/sonic_home/igor.viveiros/paralelo/logs/gera-comp-tfb-%j.out
 #SBATCH --error=/sonic_home/igor.viveiros/paralelo/logs/gera-comp-tfb-%j.err
 
+# Paralelismo: um processo principal e até 16 workers Python.
 set -euo pipefail
 
 PARALELO_ROOT="${PARALELO_ROOT:-/sonic_home/igor.viveiros/paralelo}"
@@ -27,10 +28,22 @@ if (( WORKERS < 1 || WORKERS > ALLOCATED_CPUS )); then
   exit 1
 fi
 
+# Evita multiplicação de threads dentro de cada processo worker.
+export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
+
+START_TS=$(date +%s)
+echo "============================================================"
+echo "Comparação TFB em CPU"
+echo "Nó:       ${SLURMD_NODENAME:-desconhecido}"
+echo "CPUs:     $ALLOCATED_CPUS"
+echo "Workers:  $WORKERS"
+echo "Raiz:     $ROOT"
+echo "Início:   $(date --iso-8601=seconds)"
+echo "============================================================"
 
 "$PYTHON_BIN" utils/comparar_simulacoes_financeiro.py \
   --root "$ROOT" \
@@ -39,5 +52,9 @@ export NUMEXPR_NUM_THREADS=1
   --pred_len \
   --workers "$WORKERS"
 
-echo "✅ Comparativo TFB: $OUTPUT"
-echo "✅ Comparativo TFB longo: $LONG_OUTPUT"
+END_TS=$(date +%s)
+echo "============================================================"
+echo "✅ Comparativo TFB concluído em $((END_TS - START_TS))s"
+echo "Comparativo:       $OUTPUT"
+echo "Comparativo longo: $LONG_OUTPUT"
+echo "============================================================"
